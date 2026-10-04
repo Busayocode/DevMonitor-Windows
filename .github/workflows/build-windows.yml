@@ -1,0 +1,316 @@
+name: Build DevMonitor Windows
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - '**/*.zip'
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build DevMonitor Installer
+    runs-on: windows-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find uploaded source ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $zips = @(
+            Get-ChildItem `
+              -Path $env:GITHUB_WORKSPACE `
+              -Filter "*.zip" `
+              -Recurse `
+              -File
+          )
+
+          if ($zips.Count -eq 0) {
+            throw "No source ZIP was found."
+          }
+
+          $changed = git diff-tree `
+            --no-commit-id `
+            --name-only `
+            -r `
+            $env:GITHUB_SHA |
+            Where-Object {
+              $_ -match '\.zip$'
+            } |
+            Select-Object -First 1
+
+          if ($changed) {
+            $candidate = Join-Path `
+              $env:GITHUB_WORKSPACE `
+              $changed
+
+            if (Test-Path $candidate) {
+              $source = Get-Item $candidate
+            }
+          }
+
+          if (-not $source) {
+            $source = $zips |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1
+          }
+
+          if (-not $source) {
+            throw "Unable to determine source ZIP."
+          }
+
+          Write-Host "Source ZIP:"
+          Write-Host $source.FullName
+
+          "SOURCE_ZIP=$($source.FullName)" >> $env:GITHUB_ENV
+          "SOURCE_NAME=$($source.Name)" >> $env:GITHUB_ENV
+
+      - name: Extract source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $sourceDir = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "source"
+
+          if (Test-Path $sourceDir) {
+            Remove-Item `
+              $sourceDir `
+              -Recurse `
+              -Force
+          }
+
+          New-Item `
+            -ItemType Directory `
+            -Path $sourceDir `
+            -Force |
+            Out-Null
+
+          Expand-Archive `
+            -Path $env:SOURCE_ZIP `
+            -DestinationPath $sourceDir `
+            -Force
+
+      - name: Find Windows project
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $project = Get-ChildItem `
+            -Path (Join-Path $env:GITHUB_WORKSPACE "source") `
+            -Filter "DevMonitor.Windows.csproj" `
+            -Recurse `
+            -File |
+            Select-Object -First 1
+
+          if (-not $project) {
+            throw "DevMonitor.Windows.csproj was not found in the source ZIP."
+          }
+
+          Write-Host "Project:"
+          Write-Host $project.FullName
+
+          "PROJECT_FILE=$($project.FullName)" >> $env:GITHUB_ENV
+          "PROJECT_DIR=$($project.Directory.FullName)" >> $env:GITHUB_ENV
+
+      - name: Determine version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $name = $env:SOURCE_NAME
+
+          if ($name -match '(\d+\.\d+\.\d+\.\d+)') {
+            $version = $Matches[1]
+          }
+          elseif ($name -match '[vV](\d+)') {
+            $version = "1.0.$($Matches[1]).0"
+          }
+          else {
+            $version = "1.0.0.0"
+          }
+
+          Write-Host "Version: $version"
+
+          "BUILD_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore project
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          dotnet restore "$env:PROJECT_FILE"
+
+      - name: Publish Windows application
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $publishDir = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "publish"
+
+          if (Test-Path $publishDir) {
+            Remove-Item `
+              $publishDir `
+              -Recurse `
+              -Force
+          }
+
+          dotnet publish "$env:PROJECT_FILE" `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            --output "$publishDir" `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:Version="$env:BUILD_VERSION"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          choco install innosetup --yes --no-progress
+
+      - name: Create installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $publishDir = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "publish"
+
+          $installerDir = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "installer"
+
+          New-Item `
+            -ItemType Directory `
+            -Path $installerDir `
+            -Force |
+            Out-Null
+
+          $icon = Join-Path `
+            $env:PROJECT_DIR `
+            "Assets\DevMonitor.ico"
+
+          $iconLine = ""
+
+          if (Test-Path $icon) {
+            $iconLine = "SetupIconFile=$icon"
+          }
+
+          $iss = @"
+[Setup]
+AppId={{9F55A2C7-4F8B-4B9B-9A75-DEV-MONITOR}}
+AppName=DevMonitor
+AppVersion=$env:BUILD_VERSION
+AppPublisher=DevMonitor
+DefaultDirName={autopf}\DevMonitor
+DefaultGroupName=DevMonitor
+UninstallDisplayName=DevMonitor
+OutputDir=$installerDir
+OutputBaseFilename=DevMonitor-Setup-$env:BUILD_VERSION
+Compression=lzma
+SolidCompression=yes
+ArchitecturesInstallIn64BitMode=x64compatible
+PrivilegesRequired=admin
+DisableProgramGroupPage=yes
+WizardStyle=modern
+$iconLine
+
+[Files]
+Source: "$publishDir\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+
+[Icons]
+Name: "{group}\DevMonitor"; Filename: "{app}\DevMonitor.exe"
+Name: "{autodesktop}\DevMonitor"; Filename: "{app}\DevMonitor.exe"; Tasks: desktopicon
+
+[Tasks]
+Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
+
+[Run]
+Filename: "{app}\DevMonitor.exe"; Description: "Launch DevMonitor"; Flags: nowait postinstall skipifsilent
+"@
+
+          $issPath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "DevMonitorInstaller.iss"
+
+          Set-Content `
+            -Path $issPath `
+            -Value $iss `
+            -Encoding UTF8
+
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+
+          if (-not (Test-Path $iscc)) {
+            throw "Inno Setup compiler was not found."
+          }
+
+          & $iscc $issPath
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed."
+          }
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $installer = Get-ChildItem `
+            -Path (Join-Path $env:GITHUB_WORKSPACE "installer") `
+            -Filter "*.exe" `
+            -File |
+            Select-Object -First 1
+
+          if (-not $installer) {
+            throw "Installer EXE was not created."
+          }
+
+          Write-Host ""
+          Write-Host "============================================"
+          Write-Host "DevMonitor installer successfully created"
+          Write-Host "============================================"
+          Write-Host $installer.FullName
+          Write-Host "============================================"
+
+          "INSTALLER=$($installer.FullName)" >> $env:GITHUB_ENV
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}-${{ env.BUILD_VERSION }}
+          name: DevMonitor Windows ${{ env.BUILD_VERSION }} - Build ${{ github.run_number }}
+          body: |
+            DevMonitor native Windows build.
+
+            Source ZIP: ${{ env.SOURCE_NAME }}
+            Build: ${{ github.run_number }}
+            Version: ${{ env.BUILD_VERSION }}
+
+            This release contains the Windows installer.
+          files: ${{ env.INSTALLER }}
+          generate_release_notes: false
+          make_latest: false
