@@ -14,152 +14,125 @@ permissions:
 
 jobs:
   detect:
-    name: Detect Uploaded ZIP
-    runs-on: windows-latest
+    name: Detect Project ZIP
+    runs-on: ubuntu-latest
     outputs:
       android: ${{ steps.detect.outputs.android }}
       windows: ${{ steps.detect.outputs.windows }}
-      android_dir: ${{ steps.detect.outputs.android_dir }}
-      windows_project: ${{ steps.detect.outputs.windows_project }}
+      zip_name: ${{ steps.detect.outputs.zip_name }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 2
 
-      - name: Extract and identify projects
+      - name: Identify ZIP uploaded in this commit
         id: detect
-        shell: pwsh
+        shell: bash
         run: |
-          $ErrorActionPreference = "Stop"
-          $workspace = $env:GITHUB_WORKSPACE
-          $extractBase = Join-Path $workspace "source-unpacked"
+          set -euo pipefail
 
-          New-Item -ItemType Directory -Path $extractBase -Force |
-            Out-Null
+          if [ "${{ github.event_name }}" = "push" ]; then
+            ZIP_LIST="$(git diff-tree --no-commit-id --name-only -r \
+              "${GITHUB_SHA}" -- '*.zip')"
+          else
+            ZIP_LIST="$(find . -type f -name '*.zip' \
+              -not -path './.git/*' | sort)"
+          fi
 
-          $zipPaths = @()
+          if [ -z "$ZIP_LIST" ]; then
+            echo "No ZIP found for this build."
+            exit 1
+          fi
 
-          if ("${{ github.event_name }}" -eq "push") {
-            $changed = @(
-              git diff-tree --no-commit-id --name-only -r $env:GITHUB_SHA
-            )
+          ANDROID=false
+          WINDOWS=false
+          SELECTED=""
 
-            $zipPaths = @(
-              $changed |
-                Where-Object { $_ -match '(?i)\.zip$' } |
-                ForEach-Object {
-                  Join-Path $workspace $_
-                } |
-                Where-Object {
-                  Test-Path -LiteralPath $_ -PathType Leaf
-                }
-            )
-          }
-          else {
-            $zipPaths = @(
-              Get-ChildItem -Path $workspace -Filter "*.zip" `
-                -Recurse -File |
-                Where-Object {
-                  $_.FullName -notlike "$extractBase\*"
-                } |
-                Sort-Object LastWriteTime -Descending |
-                ForEach-Object { $_.FullName }
-            )
-          }
+          while IFS= read -r ZIP; do
+            [ -z "$ZIP" ] && continue
+            [ -f "$ZIP" ] || continue
 
-          if ($zipPaths.Count -eq 0) {
-            throw "No ZIP file was found for this build."
-          }
+            echo "Inspecting $ZIP"
 
-          $androidDir = ""
-          $windowsProject = ""
-          $index = 0
+            if unzip -Z1 "$ZIP" | grep -qE '(^|/)gradlew\.bat$' &&
+               unzip -Z1 "$ZIP" | grep -qE '(^|/)settings\.gradle(\.kts)?$'; then
+              ANDROID=true
+              SELECTED="$ZIP"
+              break
+            fi
 
-          foreach ($zip in $zipPaths) {
-            $index++
-            $destination = Join-Path $extractBase "zip-$index"
+            if unzip -Z1 "$ZIP" | grep -qE '(^|/)DevMonitor\.Windows\.csproj$'; then
+              WINDOWS=true
+              SELECTED="$ZIP"
+              break
+            fi
+          done <<< "$ZIP_LIST"
 
-            Write-Host "Inspecting uploaded ZIP: $zip"
+          if [ -z "$SELECTED" ]; then
+            echo "ZIP did not contain a recognized Android or Windows project."
+            exit 1
+          fi
 
-            New-Item -ItemType Directory -Path $destination -Force |
-              Out-Null
+          # Confirm project type using the selected ZIP.
+          CONTENTS="$(unzip -Z1 "$SELECTED")"
 
-            Expand-Archive -LiteralPath $zip `
-              -DestinationPath $destination -Force
+          if echo "$CONTENTS" | grep -qE '(^|/)gradlew\.bat$' &&
+             echo "$CONTENTS" | grep -qE '(^|/)settings\.gradle(\.kts)?$'; then
+            ANDROID=true
+            WINDOWS=false
+          elif echo "$CONTENTS" | grep -qE '(^|/)DevMonitor\.Windows\.csproj$'; then
+            ANDROID=false
+            WINDOWS=true
+          fi
 
-            if (-not $androidDir) {
-              $wrappers = @(
-                Get-ChildItem -Path $destination `
-                  -Filter "gradlew.bat" -Recurse -File
-              )
+          echo "Selected ZIP: $SELECTED"
+          echo "Android: $ANDROID"
+          echo "Windows: $WINDOWS"
 
-              foreach ($wrapper in $wrappers) {
-                $dir = $wrapper.Directory.FullName
+          echo "android=$ANDROID" >> "$GITHUB_OUTPUT"
+          echo "windows=$WINDOWS" >> "$GITHUB_OUTPUT"
+          echo "zip_name=$SELECTED" >> "$GITHUB_OUTPUT"
 
-                $settings = Get-ChildItem -Path $dir `
-                  -File |
-                  Where-Object {
-                    $_.Name -eq "settings.gradle" -or
-                    $_.Name -eq "settings.gradle.kts"
-                  } |
-                  Select-Object -First 1
-
-                if ($settings) {
-                  $androidDir = $dir
-                  Write-Host "Android project found: $androidDir"
-                  break
-                }
-              }
-            }
-
-            if (-not $windowsProject) {
-              $project = Get-ChildItem -Path $destination `
-                -Filter "DevMonitor.Windows.csproj" `
-                -Recurse -File |
-                Select-Object -First 1
-
-              if ($project) {
-                $windowsProject = $project.FullName
-                Write-Host "Windows project found: $windowsProject"
-              }
-            }
-          }
-
-          "android=$([bool]$androidDir)".ToLower() |
-            ForEach-Object {
-              "android=$($_.ToString().ToLower())" |
-                Out-Null
-            }
-
-          $androidFlag = "false"
-          $windowsFlag = "false"
-
-          if ($androidDir) { $androidFlag = "true" }
-          if ($windowsProject) { $windowsFlag = "true" }
-
-          "android=$androidFlag" >> $env:GITHUB_OUTPUT
-          "windows=$windowsFlag" >> $env:GITHUB_OUTPUT
-          "android_dir=$androidDir" >> $env:GITHUB_OUTPUT
-          "windows_project=$windowsProject" >> $env:GITHUB_OUTPUT
-
-          if (-not $androidDir -and -not $windowsProject) {
-            throw "The uploaded ZIP contains neither a supported Android Gradle project nor DevMonitor.Windows.csproj."
-          }
-
-          Write-Host "Android detected: $androidFlag"
-          Write-Host "Windows detected: $windowsFlag"
+      - name: Upload selected source ZIP for build jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: selected-source-${{ github.run_number }}
+          path: ${{ steps.detect.outputs.zip_name }}
+          if-no-files-found: error
+          retention-days: 1
 
   build-android:
     name: Build Android APK
     needs: detect
     if: needs.detect.outputs.android == 'true'
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Download selected source ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: selected-source-${{ github.run_number }}
+          path: incoming
+
+      - name: Extract Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android-source
+          ZIP="$(find incoming -type f -name '*.zip' | head -n 1)"
+          unzip -q "$ZIP" -d android-source
+
+          WRAPPER="$(find android-source -type f -name gradlew \
+            | head -n 1)"
+
+          if [ -z "$WRAPPER" ]; then
+            echo "Gradle wrapper not found."
+            exit 1
+          fi
+
+          echo "ANDROID_DIR=$(dirname "$WRAPPER")" >> "$GITHUB_ENV"
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -168,125 +141,127 @@ jobs:
           java-version: '17'
 
       - name: Build APK
-        shell: pwsh
-        working-directory: ${{ needs.detect.outputs.android_dir }}
+        shell: bash
         run: |
-          $ErrorActionPreference = "Stop"
+          set -euo pipefail
+          cd "$ANDROID_DIR"
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
 
-          if (-not (Test-Path ".\gradlew.bat")) {
-            throw "Gradle wrapper not found."
-          }
-
-          & .\gradlew.bat assembleDebug --no-daemon
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Android APK build failed."
-          }
-
-      - name: Collect APK files
-        shell: pwsh
-        working-directory: ${{ needs.detect.outputs.android_dir }}
+      - name: Collect APK
+        shell: bash
         run: |
-          $ErrorActionPreference = "Stop"
+          set -euo pipefail
+          mkdir -p artifacts
 
-          $output = Join-Path $env:GITHUB_WORKSPACE "android-artifacts"
+          find android-source -type f -path '*/build/outputs/apk/*' \
+            -name '*.apk' -exec cp {} artifacts/ \;
 
-          New-Item -ItemType Directory -Path $output -Force |
-            Out-Null
-
-          $apks = @(
-            Get-ChildItem -Path . -Filter "*.apk" `
-              -Recurse -File |
-              Where-Object {
-                $_.FullName -match '[\\/]build[\\/]outputs[\\/]apk[\\/]'
-              }
-          )
-
-          if ($apks.Count -eq 0) {
-            throw "Build succeeded but no APK was found."
-          }
-
-          foreach ($apk in $apks) {
-            $target = Join-Path $output $apk.Name
-            Copy-Item -LiteralPath $apk.FullName -Destination $target -Force
-          }
+          if ! find artifacts -name '*.apk' -print -quit | grep -q .; then
+            echo "No APK was produced."
+            exit 1
+          fi
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: DevMonitor-Android-APK-${{ github.run_number }}
-          path: android-artifacts/*.apk
+          path: artifacts/*.apk
           if-no-files-found: error
           retention-days: 90
 
   build-windows:
-    name: Build Windows EXE and Installer
+    name: Build Windows Application and Installer
     needs: detect
     if: needs.detect.outputs.windows == 'true'
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Download selected source ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: selected-source-${{ github.run_number }}
+          path: incoming
 
-      - name: Set up .NET 8
+      - name: Extract Windows project
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $zip = Get-ChildItem incoming -Filter "*.zip" -Recurse -File |
+            Select-Object -First 1
+
+          if (-not $zip) {
+            throw "Selected source ZIP not found."
+          }
+
+          $source = Join-Path $env:GITHUB_WORKSPACE "windows-source"
+          New-Item -ItemType Directory -Path $source -Force |
+            Out-Null
+
+          Expand-Archive -LiteralPath $zip.FullName `
+            -DestinationPath $source -Force
+
+          $project = Get-ChildItem $source `
+            -Filter "DevMonitor.Windows.csproj" -Recurse -File |
+            Select-Object -First 1
+
+          if (-not $project) {
+            throw "DevMonitor.Windows.csproj not found."
+          }
+
+          "PROJECT_FILE=$($project.FullName)" >> $env:GITHUB_ENV
+
+      - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restore Windows project
+      - name: Restore
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $project = "${{ needs.detect.outputs.windows_project }}"
-
-          dotnet restore "$project"
-
+          dotnet restore "$env:PROJECT_FILE"
           if ($LASTEXITCODE -ne 0) {
-            throw "Windows project restore failed."
+            throw "Restore failed."
           }
 
-      - name: Publish Windows application
+      - name: Publish Windows EXE
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
-          $project = "${{ needs.detect.outputs.windows_project }}"
           $publish = Join-Path $env:GITHUB_WORKSPACE "publish"
-
           New-Item -ItemType Directory -Path $publish -Force |
             Out-Null
 
-          dotnet publish "$project" `
+          dotnet publish "$env:PROJECT_FILE" `
             --configuration Release `
             --runtime win-x64 `
             --self-contained true `
             --output "$publish" `
             -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:EnableCompressionInSingleFile=true
+            -p:IncludeNativeLibrariesForSelfExtract=true
 
           if ($LASTEXITCODE -ne 0) {
-            throw "Windows application publish failed."
+            throw "Windows publish failed."
           }
 
           if (-not (Test-Path (Join-Path $publish "DevMonitor.exe"))) {
-            throw "DevMonitor.exe was not produced."
+            throw "DevMonitor.exe not found in publish output."
           }
 
-      - name: Upload Windows application EXE
+      - name: Upload Windows application
         uses: actions/upload-artifact@v4
         with:
           name: DevMonitor-Windows-Application-${{ github.run_number }}
-          path: publish/DevMonitor.exe
+          path: publish/*.exe
           if-no-files-found: error
           retention-days: 90
 
       - name: Install Inno Setup
         shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          choco install innosetup --yes --no-progress
+        run: choco install innosetup --yes --no-progress
 
       - name: Create installer script
         shell: pwsh
@@ -300,7 +275,7 @@ jobs:
           New-Item -ItemType Directory -Path $installer -Force |
             Out-Null
 
-          $lines = @(
+          @(
             '[Setup]'
             'AppId={{9F55A2C7-4F8B-4B9B-9A75-DEV-MONITOR}}'
             'AppName=DevMonitor'
@@ -308,14 +283,12 @@ jobs:
             'AppPublisher=DevMonitor'
             'DefaultDirName={autopf}\DevMonitor'
             'DefaultGroupName=DevMonitor'
-            'UninstallDisplayName=DevMonitor'
-            "OutputDir=$installer"
+            'OutputDir=installer'
             'OutputBaseFilename=DevMonitor-Setup'
             'Compression=lzma'
             'SolidCompression=yes'
             'ArchitecturesInstallIn64BitMode=x64compatible'
             'PrivilegesRequired=admin'
-            'DisableProgramGroupPage=yes'
             'WizardStyle=modern'
             ''
             '[Files]'
@@ -323,30 +296,23 @@ jobs:
             ''
             '[Icons]'
             'Name: "{group}\DevMonitor"; Filename: "{app}\DevMonitor.exe"'
-            'Name: "{autodesktop}\DevMonitor"; Filename: "{app}\DevMonitor.exe"; Tasks: desktopicon'
-            ''
-            '[Tasks]'
-            'Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"'
             ''
             '[Run]'
             'Filename: "{app}\DevMonitor.exe"; Description: "Launch DevMonitor"; Flags: nowait postinstall skipifsilent'
-          )
+          ) | Set-Content -Path $script -Encoding UTF8
 
-          $lines | Set-Content -Path $script -Encoding UTF8
-
-      - name: Build Windows installer
+      - name: Build installer
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          $script = Join-Path $env:GITHUB_WORKSPACE "DevMonitorInstaller.iss"
 
           if (-not (Test-Path $iscc)) {
             throw "Inno Setup compiler not found."
           }
 
-          & $iscc $script
+          & $iscc "$env:GITHUB_WORKSPACE\DevMonitorInstaller.iss"
 
           if ($LASTEXITCODE -ne 0) {
             throw "Windows installer build failed."
@@ -359,4 +325,3 @@ jobs:
           path: installer/*.exe
           if-no-files-found: error
           retention-days: 90
-```
