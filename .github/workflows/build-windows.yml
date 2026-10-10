@@ -1,4 +1,5 @@
-name: Build DevMonitor Windows
+```yaml
+name: Build DevMonitor Android and Windows
 
 on:
   push:
@@ -9,80 +10,308 @@ on:
       - '**/*.zip'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build:
-    name: Build DevMonitor Installer
+  detect:
+    name: Detect Uploaded Project ZIP
+    runs-on: windows-latest
+    outputs:
+      android: ${{ steps.detect.outputs.android }}
+      windows: ${{ steps.detect.outputs.windows }}
+      android_root: ${{ steps.detect.outputs.android_root }}
+      windows_project: ${{ steps.detect.outputs.windows_project }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find and inspect uploaded ZIPs
+        id: detect
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $workspace = $env:GITHUB_WORKSPACE
+          $extractBase = Join-Path $workspace "detected-source"
+
+          New-Item -ItemType Directory -Path $extractBase -Force |
+            Out-Null
+
+          # On a ZIP upload, inspect ZIPs changed in this commit.
+          # On manual runs, inspect all ZIPs, newest first.
+          $zipPaths = @()
+
+          if ("${{ github.event_name }}" -eq "push") {
+            $changed = git diff-tree --no-commit-id `
+              --name-only -r $env:GITHUB_SHA
+
+            $zipPaths = @(
+              $changed |
+                Where-Object { $_ -match '(?i)\.zip$' } |
+                ForEach-Object {
+                  Join-Path $workspace $_
+                } |
+                Where-Object { Test-Path $_ -PathType Leaf }
+            )
+          }
+          else {
+            $zipPaths = @(
+              Get-ChildItem -Path $workspace -Filter "*.zip" `
+                -Recurse -File |
+                Where-Object {
+                  $_.FullName -notlike "$extractBase\*"
+                } |
+                Sort-Object LastWriteTime -Descending |
+                ForEach-Object { $_.FullName }
+            )
+          }
+
+          if (-not $zipPaths -or $zipPaths.Count -eq 0) {
+            throw "No uploaded ZIP files were found."
+          }
+
+          $androidRoot = ""
+          $windowsProject = ""
+          $index = 0
+
+          foreach ($zip in $zipPaths) {
+            $index++
+            $destination = Join-Path $extractBase "zip-$index"
+
+            Write-Host "Inspecting ZIP: $zip"
+
+            New-Item -ItemType Directory -Path $destination -Force |
+              Out-Null
+
+            Expand-Archive -LiteralPath $zip `
+              -DestinationPath $destination -Force
+
+            # Find the Windows project.
+            if (-not $windowsProject) {
+              $project = Get-ChildItem -Path $destination `
+                -Filter "DevMonitor.Windows.csproj" `
+                -Recurse -File |
+                Select-Object -First 1
+
+              if ($project) {
+                $windowsProject = $project.FullName
+                Write-Host "Windows project found: $windowsProject"
+              }
+            }
+
+            # Find the Android Gradle project.
+            if (-not $androidRoot) {
+              $gradleWrapper = Get-ChildItem -Path $destination `
+                -Filter "gradlew" -Recurse -File |
+                Select-Object -First 1
+
+              if ($gradleWrapper) {
+                $gradleDir = $gradleWrapper.Directory.FullName
+
+                $settings = Get-ChildItem -Path $gradleDir `
+                  -Filter "settings.gradle*" -File |
+                  Select-Object -First 1
+
+                if ($settings) {
+                  $androidRoot = $gradleDir
+                  Write-Host "Android project found: $androidRoot"
+                }
+              }
+            }
+          }
+
+          # Store paths relative to GITHUB_WORKSPACE.
+          $relativeAndroid = ""
+          $relativeWindows = ""
+
+          if ($androidRoot) {
+            $relativeAndroid = [IO.Path]::GetRelativePath(
+              $workspace, $androidRoot
+            )
+          }
+
+          if ($windowsProject) {
+            $relativeWindows = [IO.Path]::GetRelativePath(
+              $workspace, $windowsProject
+            )
+          }
+
+          "android=$([bool]$androidRoot)" >> $env:GITHUB_OUTPUT
+          "windows=$([bool]$windowsProject)" >> $env:GITHUB_OUTPUT
+          "android_root=$relativeAndroid" >> $env:GITHUB_OUTPUT
+          "windows_project=$relativeWindows" >> $env:GITHUB_OUTPUT
+
+          if (-not $androidRoot -and -not $windowsProject) {
+            throw "No Android Gradle project or DevMonitor.Windows.csproj was found in the uploaded ZIPs."
+          }
+
+  build-android:
+    name: Build Android APK
+    needs: detect
+    if: needs.detect.outputs.android == 'True'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download detected source
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: unused-placeholder
+          path: unused-placeholder
+
+      # The detector extracts ZIPs on its own runner.
+      # Re-extract the newest matching Android ZIP on this runner.
+      - name: Extract Android source ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p android-source
+
+          ZIP="$(find . -type f -name '*.zip' \
+            -not -path './android-source/*' \
+            -printf '%T@ %p\n' |
+            sort -nr |
+            head -n 1 |
+            cut -d' ' -f2-)"
+
+          if [ -z "$ZIP" ]; then
+            echo "No source ZIP found."
+            exit 1
+          fi
+
+          echo "Extracting: $ZIP"
+          unzip -q "$ZIP" -d android-source
+
+          GRADLEW="$(find android-source -type f \
+            -name gradlew | head -n 1)"
+
+          if [ -z "$GRADLEW" ]; then
+            echo "Android Gradle wrapper not found."
+            exit 1
+          fi
+
+          echo "ANDROID_DIR=$(dirname "$GRADLEW")" >> "$GITHUB_ENV"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ANDROID_DIR"
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Collect APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android-artifacts
+
+          find android-source -type f -path '*/build/outputs/apk/*' \
+            -name '*.apk' -exec cp {} android-artifacts/ \;
+
+          if [ -z "$(find android-artifacts -name '*.apk' -print -quit)" ]; then
+            echo "No APK was produced."
+            exit 1
+          fi
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Android-APK-${{ github.run_number }}
+          path: android-artifacts/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+  build-windows:
+    name: Build Windows EXE and Installer
+    needs: detect
+    if: needs.detect.outputs.windows == 'True'
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find source ZIP
+      - name: Extract Windows source ZIP
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
-          $zip = Get-ChildItem `
-            -Path $env:GITHUB_WORKSPACE `
-            -Filter "*.zip" `
-            -Recurse `
-            -File |
-            Select-Object -First 1
+          $workspace = $env:GITHUB_WORKSPACE
+          $source = Join-Path $workspace "windows-source"
 
-          if (-not $zip) {
-            throw "No source ZIP found in repository."
-          }
-
-          Write-Host "Source ZIP:"
-          Write-Host $zip.FullName
-
-          "SOURCE_ZIP=$($zip.FullName)" >> $env:GITHUB_ENV
-          "SOURCE_NAME=$($zip.Name)" >> $env:GITHUB_ENV
-
-      - name: Extract source ZIP
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $source = Join-Path $env:GITHUB_WORKSPACE "source"
-
-          New-Item `
-            -ItemType Directory `
-            -Path $source `
-            -Force |
+          New-Item -ItemType Directory -Path $source -Force |
             Out-Null
 
-          Expand-Archive `
-            -Path $env:SOURCE_ZIP `
-            -DestinationPath $source `
-            -Force
+          $zipPaths = @()
 
-          Write-Host "Source extracted."
+          if ("${{ github.event_name }}" -eq "push") {
+            $changed = git diff-tree --no-commit-id `
+              --name-only -r $env:GITHUB_SHA
 
-      - name: Find Windows project
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $project = Get-ChildItem `
-            -Path (Join-Path $env:GITHUB_WORKSPACE "source") `
-            -Filter "DevMonitor.Windows.csproj" `
-            -Recurse `
-            -File |
-            Select-Object -First 1
-
-          if (-not $project) {
-            throw "DevMonitor.Windows.csproj was not found in the source ZIP."
+            $zipPaths = @(
+              $changed |
+                Where-Object { $_ -match '(?i)\.zip$' } |
+                ForEach-Object { Join-Path $workspace $_ } |
+                Where-Object { Test-Path $_ -PathType Leaf }
+            )
+          }
+          else {
+            $zipPaths = @(
+              Get-ChildItem -Path $workspace -Filter "*.zip" `
+                -Recurse -File |
+                Sort-Object LastWriteTime -Descending |
+                ForEach-Object { $_.FullName }
+            )
           }
 
-          Write-Host "Project found:"
-          Write-Host $project.FullName
+          $project = $null
 
-          "PROJECT_FILE=$($project.FullName)" >> $env:GITHUB_ENV
-          "PROJECT_DIR=$($project.Directory.FullName)" >> $env:GITHUB_ENV
+          foreach ($zip in $zipPaths) {
+            $candidate = Join-Path $source `
+              ([IO.Path]::GetFileNameWithoutExtension($zip))
 
-      - name: Setup .NET 8
+            New-Item -ItemType Directory -Path $candidate -Force |
+              Out-Null
+
+            Expand-Archive -LiteralPath $zip `
+              -DestinationPath $candidate -Force
+
+            $found = Get-ChildItem -Path $candidate `
+              -Filter "DevMonitor.Windows.csproj" `
+              -Recurse -File |
+              Select-Object -First 1
+
+            if ($found) {
+              $project = $found.FullName
+              break
+            }
+          }
+
+          if (-not $project) {
+            throw "Windows project not found in uploaded ZIPs."
+          }
+
+          "PROJECT_FILE=$project" >> $env:GITHUB_ENV
+
+          Write-Host "Building project: $project"
+
+      - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
@@ -91,27 +320,16 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-
           dotnet restore "$env:PROJECT_FILE"
 
-      - name: Install Inno Setup
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          choco install innosetup --yes --no-progress
-
-      - name: Publish application
+      - name: Publish Windows application
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
           $publish = Join-Path $env:GITHUB_WORKSPACE "publish"
 
-          New-Item `
-            -ItemType Directory `
-            -Path $publish `
-            -Force |
+          New-Item -ItemType Directory -Path $publish -Force |
             Out-Null
 
           dotnet publish "$env:PROJECT_FILE" `
@@ -123,6 +341,28 @@ jobs:
             -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true
 
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows publish failed."
+          }
+
+          if (-not (Test-Path (Join-Path $publish "DevMonitor.exe"))) {
+            throw "DevMonitor.exe was not produced."
+          }
+
+      - name: Upload Windows application EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Windows-Application-${{ github.run_number }}
+          path: publish/DevMonitor.exe
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          choco install innosetup --yes --no-progress
+
       - name: Create installer script
         shell: pwsh
         run: |
@@ -132,17 +372,14 @@ jobs:
           $installer = Join-Path $env:GITHUB_WORKSPACE "installer"
           $script = Join-Path $env:GITHUB_WORKSPACE "DevMonitorInstaller.iss"
 
-          New-Item `
-            -ItemType Directory `
-            -Path $installer `
-            -Force |
+          New-Item -ItemType Directory -Path $installer -Force |
             Out-Null
 
           $lines = @(
             '[Setup]'
             'AppId={{9F55A2C7-4F8B-4B9B-9A75-DEV-MONITOR}}'
             'AppName=DevMonitor'
-            'AppVersion=1.0.0'
+            'AppVersion=4.6.0'
             'AppPublisher=DevMonitor'
             'DefaultDirName={autopf}\DevMonitor'
             'DefaultGroupName=DevMonitor'
@@ -170,12 +407,7 @@ jobs:
             'Filename: "{app}\DevMonitor.exe"; Description: "Launch DevMonitor"; Flags: nowait postinstall skipifsilent'
           )
 
-          $lines |
-            Set-Content `
-              -Path $script `
-              -Encoding UTF8
-
-          Write-Host "Installer script created."
+          $lines | Set-Content -Path $script -Encoding UTF8
 
       - name: Build installer
         shell: pwsh
@@ -192,33 +424,14 @@ jobs:
           & $iscc $script
 
           if ($LASTEXITCODE -ne 0) {
-            throw "Inno Setup failed."
+            throw "Installer build failed."
           }
 
-      - name: Find installer
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $installer = Get-ChildItem `
-            -Path (Join-Path $env:GITHUB_WORKSPACE "installer") `
-            -Filter "*.exe" `
-            -File |
-            Select-Object -First 1
-
-          if (-not $installer) {
-            throw "Installer EXE was not created."
-          }
-
-          Write-Host "=========================================="
-          Write-Host "DevMonitor installer created:"
-          Write-Host $installer.FullName
-          Write-Host "=========================================="
-
-      - name: Upload installer
+      - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
           name: DevMonitor-Windows-Installer-${{ github.run_number }}
           path: installer/*.exe
           if-no-files-found: error
           retention-days: 90
+```
