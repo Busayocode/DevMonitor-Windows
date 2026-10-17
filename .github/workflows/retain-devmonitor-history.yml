@@ -1,0 +1,128 @@
+name: Retain Latest 20 DevMonitor ZIPs and Build Runs
+
+on:
+  workflow_run:
+    workflows:
+      - Build DevMonitor Android and Windows
+    types:
+      - completed
+
+  schedule:
+    - cron: '23 3 * * *'
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: devmonitor-retention
+  cancel-in-progress: false
+
+jobs:
+  retain:
+    name: Retain latest 20 source ZIPs and build runs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Keep only the latest 20 tracked ZIPs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          declare -a rows=()
+
+          while IFS= read -r -d '' file; do
+            timestamp="$(git log -1 --format=%ct -- "$file")"
+            timestamp="${timestamp:-0}"
+            rows+=("$timestamp"$'\t'"$file")
+          done < <(git ls-files -z '*.zip')
+
+          mapfile -t sorted < <(
+            printf '%s\n' "${rows[@]}" |
+              sort -rn -k1,1 -k2,2
+          )
+
+          echo "Tracked ZIP files: ${#sorted[@]}"
+
+          if (( ${#sorted[@]} > 20 )); then
+            for ((i=20; i<${#sorted[@]}; i++)); do
+              file="${sorted[$i]#*$'\t'}"
+
+              if [[ -f "$file" ]]; then
+                echo "Removing old ZIP: $file"
+                git rm -- "$file"
+              fi
+            done
+
+            if ! git diff --cached --quiet; then
+              git commit -m \
+                "chore: retain latest 20 source ZIPs [skip ci]"
+              git push
+            fi
+          else
+            echo "No source ZIP cleanup required."
+          fi
+
+      - name: Retain the latest 20 build workflow runs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+
+            const workflow = await github.rest.actions.getWorkflow({
+              owner,
+              repo,
+              workflow_id: 'build-windows.yml'
+            });
+
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner,
+                repo,
+                workflow_id: workflow.data.id,
+                per_page: 100
+              }
+            );
+
+            runs.sort((a, b) =>
+              new Date(b.created_at) - new Date(a.created_at)
+            );
+
+            // Keep the newest 20 runs, including in-progress runs.
+            const oldRuns = runs.slice(20);
+
+            core.info(
+              `Found ${runs.length} runs; ` +
+              `${oldRuns.length} are beyond the retention limit.`
+            );
+
+            for (const run of oldRuns) {
+              if (run.status !== 'completed') {
+                core.info(
+                  `Keeping active run ${run.id}: ${run.status}`
+                );
+                continue;
+              }
+
+              core.info(`Deleting old run ${run.id}`);
+
+              await github.rest.actions.deleteWorkflowRun({
+                owner,
+                repo,
+                run_id: run.id
+              });
+            }
