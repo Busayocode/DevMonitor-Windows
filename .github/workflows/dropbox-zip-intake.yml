@@ -33,8 +33,8 @@ jobs:
           set -euo pipefail
           for name in DROPBOX_APP_KEY DROPBOX_APP_SECRET DROPBOX_REFRESH_TOKEN; do
             if [ -z "${!name:-}" ]; then
-              echo "::error::Repository secret $name is missing."
-              exit 1
+              echo "::warning::Dropbox intake is installed but not activated yet. Add repository secrets DROPBOX_APP_KEY, DROPBOX_APP_SECRET, and DROPBOX_REFRESH_TOKEN to enable it."
+              exit 0
             fi
           done
 
