@@ -47,3 +47,8 @@ Before feature work, extract/read the master sheet and change log from the autho
 3. Fix the SDK setup issue separately from app source work.
 4. Verify large-file direct push using a genuine ZIP or select a tested upload route; keep manual source_zip dispatch.
 5. Record app changes in the app's own master sheet/change log and repository automation changes in this handoff/change log.
+
+## Android SDK correction — 2026-10-18
+- Updated `.github/workflows/build-devmonitor.yml` to use `android-actions/setup-android@v4` (commit `df545c427fee452b4d9faa4a29bea0a0cc6242de`). The prior v3 action requested the removed `tools` SDK package and exited before Gradle compilation.
+- Verification run: https://github.com/Busayocode/DevMonitor-Windows/actions/runs/39144857359. At handoff update, it was still in progress; do not claim the Android build passes until the job finishes and release artifacts are checked.
+- Windows build logic was not changed. If Android now reaches Gradle and fails, capture the new error and handle it as a separate source/build issue. Do not modify payment logic or Drive settings as part of this SDK fix.
