@@ -253,6 +253,11 @@ jobs:
           printf '%s' "$KEYSTORE_B64" \
             | base64 --decode > "$PROJECT_DIR/release-key.jks"
 
+          # The Android module's release signing config resolves this path
+          # relative to app/, so provide the keystore at that expected location too.
+          mkdir -p "$PROJECT_DIR/app"
+          cp "$PROJECT_DIR/release-key.jks" "$PROJECT_DIR/app/release-key.jks"
+
           touch "$PROJECT_DIR/gradle.properties"
           {
             echo 'RELEASE_STORE_FILE=release-key.jks'
