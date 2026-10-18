@@ -7,6 +7,12 @@ on:
       - '**/*.zip'
       - '.github/workflows/build-devmonitor.yml'
   workflow_dispatch:
+    inputs:
+      source_zip:
+        description: 'Exact ZIP path to build (used by Dropbox intake; leave blank for automatic selection)'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -26,6 +32,8 @@ jobs:
       - name: Detect source ZIPs by their contents
         id: detect
         shell: bash
+        env:
+          INPUT_SOURCE_ZIP: ${{ inputs.source_zip }}
         run: |
           set -euo pipefail
           python3 <<'PY'
@@ -33,7 +41,11 @@ jobs:
           from pathlib import Path
 
           event = os.environ.get("GITHUB_EVENT_NAME", "")
+          input_source_zip = os.environ.get("INPUT_SOURCE_ZIP", "").strip()
           candidates = []
+
+          if event == "workflow_dispatch" and input_source_zip:
+              candidates = [Path(input_source_zip)]
 
           if event == "push":
               result = subprocess.run(
