@@ -1,0 +1,131 @@
+name: Dropbox ZIP Intake
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dropbox-zip-intake
+  cancel-in-progress: false
+
+jobs:
+  import-latest-zip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get Dropbox access token
+        id: dropbox-auth
+        shell: bash
+        env:
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          for name in DROPBOX_APP_KEY DROPBOX_APP_SECRET DROPBOX_REFRESH_TOKEN; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Repository secret $name is missing."
+              exit 1
+            fi
+          done
+
+          response="$(curl --fail-with-body --silent --show-error \
+            --user "$DROPBOX_APP_KEY:$DROPBOX_APP_SECRET" \
+            --data-urlencode grant_type=refresh_token \
+            --data-urlencode "refresh_token=$DROPBOX_REFRESH_TOKEN" \
+            https://api.dropbox.com/oauth2/token)"
+          token="$(printf '%s' "$response" | jq -er '.access_token')"
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Find and import ZIPs from Dropbox staging folder
+        shell: bash
+        env:
+          DROPBOX_TOKEN: ${{ steps.dropbox-auth.outputs.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p incoming
+
+          listing="$(curl --fail-with-body --silent --show-error \
+            -X POST https://api.dropboxapi.com/2/files/list_folder \
+            -H "Authorization: Bearer $DROPBOX_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data '{"path":"/DevMonitor-GitHub-Intake","recursive":false,"include_deleted":false}')"
+
+          printf '%s' "$listing" | jq -e '.entries | type == "array"' >/dev/null
+          mapfile -t files < <(printf '%s' "$listing" | jq -r '
+            [.entries[] | select(.[".tag"] == "file") |
+             select((.name | ascii_downcase | endswith(".zip"))) |
+             {name: .name, path: .path_lower, modified: .server_modified}]
+            | sort_by(.modified) | reverse | .[] | [.name,.path] | @tsv
+          ')
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No ZIP files found in /DevMonitor-GitHub-Intake."
+            exit 0
+          fi
+
+          imported=0
+          for entry in "${files[@]}"; do
+            name="${entry%%$'\t'*}"
+            dropbox_path="${entry#*$'\t'}"
+
+            # Prevent paths, control characters, and unexpected names from escaping incoming/.
+            safe_name="$(basename "$name" | tr -cd '[:alnum:]_. ()-')"
+            if [ -z "$safe_name" ] || [ "$safe_name" != "$name" ]; then
+              echo "::warning::Skipping ZIP with an unsupported filename: $name"
+              continue
+            fi
+
+            destination="incoming/$safe_name"
+            tmp="$(mktemp)"
+            encoded_arg="$(jq -nc --arg path "$dropbox_path" '{path: $path}')"
+            if ! curl --fail-with-body --silent --show-error \
+              -X POST https://content.dropboxapi.com/2/files/download \
+              -H "Authorization: Bearer $DROPBOX_TOKEN" \
+              -H "Dropbox-API-Arg: $encoded_arg" \
+              -o "$tmp"; then
+              rm -f "$tmp"
+              exit 1
+            fi
+
+            if ! unzip -tq "$tmp" >/dev/null; then
+              rm -f "$tmp"
+              echo "::warning::Skipping invalid ZIP: $name"
+              continue
+            fi
+
+            if [ -f "$destination" ] && cmp -s "$tmp" "$destination"; then
+              echo "Unchanged, skipping: $destination"
+              rm -f "$tmp"
+              continue
+            fi
+
+            mv "$tmp" "$destination"
+            echo "Imported: $destination"
+            imported=$((imported + 1))
+          done
+
+          if [ "$imported" -eq 0 ]; then
+            echo "No new or changed ZIPs to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add incoming/*.zip
+          if git diff --cached --quiet; then
+            echo "No repository changes to commit."
+            exit 0
+          fi
+          git commit -m "Import DevMonitor ZIP from Dropbox intake"
+          git push
