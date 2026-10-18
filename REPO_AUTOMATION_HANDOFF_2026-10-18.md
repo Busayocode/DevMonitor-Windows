@@ -52,3 +52,11 @@ Before feature work, extract/read the master sheet and change log from the autho
 - Updated `.github/workflows/build-devmonitor.yml` to use `android-actions/setup-android@v4` (commit `df545c427fee452b4d9faa4a29bea0a0cc6242de`). The prior v3 action requested the removed `tools` SDK package and exited before Gradle compilation.
 - Verification run: https://github.com/Busayocode/DevMonitor-Windows/actions/runs/39144857359. At handoff update, it was still in progress; do not claim the Android build passes until the job finishes and release artifacts are checked.
 - Windows build logic was not changed. If Android now reaches Gradle and fails, capture the new error and handle it as a separate source/build issue. Do not modify payment logic or Drive settings as part of this SDK fix.
+
+
+## Android release signing follow-up — 2026-10-18
+- Run `39144857359` (https://github.com/Busayocode/DevMonitor-Windows/actions/runs/39144857359) fixed the retired SDK-tools setup issue: Android SDK setup completed and Gradle compiled Kotlin and Java.
+- That run then failed only at `:app:validateSigningRelease`: Gradle expected `/build-source/app/release-key.jks`, but the workflow had decoded the configured `RELEASE_KEYSTORE_BASE64` secret to `/build-source/release-key.jks`.
+- Workflow commit `cb8f874ebebe8d91cce2d71e65ebab659a122c16` now copies the decoded keystore to both project root and `app/release-key.jks`. This is a workflow path correction; it does not expose or change secret values.
+- Verify the workflow run triggered by this commit and check for `DevMonitor-Android-Release` artifact before claiming the Android release build succeeds. If signing advances and another error occurs, diagnose that exact error separately.
+- Windows build logic, Android source ZIP, payment logic, Drive configuration values, and application features were not changed by this correction.
