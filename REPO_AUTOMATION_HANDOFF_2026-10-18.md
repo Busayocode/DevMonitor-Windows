@@ -7,7 +7,7 @@ Branch: main
 This chat/account did not produce the last application source ZIP. Treat this repository as the future development repo, but do not assume this agent has the missing conversation's full feature intent. The app's own master sheet and change log remain authoritative. The repository root currently does not expose MASTER_WORK_SHEET.md or CHANGE_LOG.md, and the latest contents of those documents have not yet been verified here. They may be inside a source ZIP or elsewhere.
 
 ## Current source inventory verified
-- Latest Android source ZIP visible at root: DevMonitor-4.7.0-TARGET-v277-ANDROID-EXPECTED-TO-DATE-1.zip (about 4.71 MB).
+- Latest Android source ZIP currently visible at repository root: DevMonitor-4.7.0-TARGET-v277-ANDROID-EXPECTED-TO-DATE-1.zip (about 4.71 MB). A separate v279 onboarding/partner-cleanup source ZIP was prepared in ChatGPT on 2026-10-19 but has not yet been uploaded to the repository.
 - Latest Windows source ZIP visible at root: DevMonitor-Windows-Native-v278-TARGET-WPF-COMPILE-FIX.zip.
 - DevMonitor-4.7.0-TARGET-v279-DIRECT-UPLOAD-TEST.zip is NOT app source. It is a 239-byte transfer test containing only TRANSFER-TEST.txt. Never build or treat it as a release.
 - Recent Android ZIP filenames v255–v275 indicate iteration themes: earnings-card partner filter; photographic earnings flyer; share-resolution estimate, card sharpness and label clarity; dashboard partners card/profile builder; partner-performance flyer; preserving background checks; search cards backup/restore; fork compile fix; FRC weekly-payment separation; share-card next-tier earnings; historical payment eligibility gate; payment-card gate alignment; strict payment-card history gate. Filenames are hints, not proof of implementation/completion.
@@ -18,7 +18,7 @@ This chat/account did not produce the last application source ZIP. Treat this re
    - The detect job inspects ZIP contents, not just filenames. Android requires a Gradle wrapper, settings.gradle(.kts), and app/build.gradle(.kts). Windows requires DevMonitor.Windows.csproj.
    - Builds run only for recognized source types; source ZIPs are naturally sorted for fallback selection.
    - The v279 dummy should be ignored as invalid source; v277 is currently the newest Android source ZIP visible in the repository.
-2. .github/workflows/dropbox-zip-intake.yml — added to support Dropbox intake and dispatch a build for an exact ZIP. End-to-end configuration and operation are not verified; do not call it production-ready.
+2. `.github/workflows/dropbox-zip-intake.yml` — REMOVED on 2026-10-19 by commit `4820458be735bf5bb53766f9ebf163befa983cbf` at the user's request. Dropbox intake is no longer part of the workflow; use the normal GitHub ZIP upload and build workflow.
 3. .github/workflows/retain-devmonitor-history.yml — exists. Review its references before relying on it; earlier notes flagged that it may reference a workflow filename that differs from the current build-devmonitor.yml.
 4. Direct GitHub push was tested via Git-Data API with a tiny dummy ZIP. This proves the small-file path only. It does NOT prove that uploading a real 4–5 MB Android ZIP through the same connector is reliable. Test with a genuine source ZIP before claiming large direct push is solved.
 5. The transfer-test commit was 185f2f398e80a81b9da1deb1c6c6e85231470d11 (dummy only).
@@ -53,6 +53,11 @@ Before feature work, extract/read the master sheet and change log from the autho
 - Verification run: https://github.com/Busayocode/DevMonitor-Windows/actions/runs/39144857359. At handoff update, it was still in progress; do not claim the Android build passes until the job finishes and release artifacts are checked.
 - Windows build logic was not changed. If Android now reaches Gradle and fails, capture the new error and handle it as a separate source/build issue. Do not modify payment logic or Drive settings as part of this SDK fix.
 
+
+## Dropbox intake retirement — 2026-10-19
+- Deleted `.github/workflows/dropbox-zip-intake.yml` in commit `4820458be735bf5bb53766f9ebf163befa983cbf` because Dropbox intake is no longer used.
+- `.github/workflows/build-devmonitor.yml` and `.github/workflows/retain-devmonitor-history.yml` remain.
+- The small v279 transfer-test ZIP at repository root remains a dummy and must never be built as app source.
 
 ## Android release signing follow-up — 2026-10-18
 - Run `39144857359` (https://github.com/Busayocode/DevMonitor-Windows/actions/runs/39144857359) fixed the retired SDK-tools setup issue: Android SDK setup completed and Gradle compiled Kotlin and Java.
