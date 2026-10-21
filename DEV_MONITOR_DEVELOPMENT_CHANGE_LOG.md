@@ -1,5 +1,12 @@
 # DevMonitor Development Change Log
 
+## 2026-10-21 — Trend scope corrected to month-on-month only
+
+- User clarified that the trend section actually used is month-on-month only.
+- 7-day, 30-day, and 7/30-day trend views/selectors are not part of the intended app experience and must not be added or shown.
+- Apply the same requirement to Android and Windows/PC. Keep existing monthly comparisons and data rules intact; do not alter finalized payment logic or MOM snapshot behavior.
+- This documentation update records the requirement only. The actual app screen still needs to be updated/verified against the latest source ZIPs before claiming implementation or build success.
+
 ## 2026-10-21 — Permanent cross-platform parity tracking and platform-prefixed source ZIP names
 
 - Added `ANDROID_WINDOWS_PARITY_MATRIX.md` as a persistent register for tracking features originating on Android or Windows, porting direction, intentional platform-specific behavior, blockers, and build/runtime verification evidence.
