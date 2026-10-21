@@ -31,10 +31,17 @@ These are source-package references, not claims of successful builds:
 
 Refresh these baseline references against the actual files and latest GitHub workflow run before each release. If later packages exist, replace these references with the actual latest source inputs and evidence.
 
+## Trend scope correction (2026-10-21)
+
+- The app's trend section must show **month-on-month trends only**. Do not add or display 7-day, 30-day, or 7/30-day trend selectors/views.
+- Apply this requirement to Android and Windows/PC wherever a trend section exists. Keep the comparison based on monthly datasets; do not change the underlying source data, payment calculations, or MOM snapshot rules.
+- Status remains **Needs verification** until both actual source packages are inspected and the relevant screen is built/tested.
+
 ## Cross-platform feature register
 
 | Feature / area | Android status | Windows/PC status | Decision / next action |
 |---|---|---|---|
+| Trend section — month-on-month only | **Needs verification** — remove/avoid 7-day and 30-day trend UI; confirm actual source | **Needs verification** — apply the same month-on-month-only presentation if the section exists | Keep monthly comparisons only; do not add 7/30-day options; verify both platforms |
 | Shareable result-card readability | **Needs verification** — v290/v291/v292 lineage includes Android share-card legibility changes; confirm exact source before porting | **Needs verification** — v279 source package includes share-card text fitting, stronger contrast, and supporting text changes; compile and visually inspect output | Compare final renderers, test long and short content on both, then mark shared only after visual verification |
 | Quick Check result-card composition to match Add List | **Needs verification** — user-specified Android result-card behavior; inspect latest source | **Needs verification** — inspect Windows workflow and result card | Compare card composition and carry over only the matching presentation behavior; do not alter normal Add List → Start/Refresh All flow |
 | SMS Checker workflow and result presentation | **Needs verification** — Android behavior is the reference for phone interaction | **Needs verification** — verify equivalent PC flow and document intentional desktop differences | Compare Add List, Quick Check, Start/Refresh All, result card and shareable card as separate concerns |
