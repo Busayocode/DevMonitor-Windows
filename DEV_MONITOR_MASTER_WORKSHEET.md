@@ -23,6 +23,12 @@ These are the latest package references in the development context at the time t
 - Windows: `DevMonitor-Windows-Native-v279-ANDROID-PARITY-SHARE-CARD-LEGIBILITY.zip` — ZIP integrity passed; Windows compile/runtime not confirmed; not confirmed pushed.
 - Workflow: `.github/workflows/build-devmonitor.yml` — detects project types by ZIP contents. It does not require a particular platform prefix.
 
+## Trend requirement — corrected 2026-10-21
+
+- The trend section used by the app is **month-on-month only**. Remove/avoid 7-day, 30-day, and 7/30-day trend UI or options on both Android and Windows/PC.
+- Preserve the existing monthly comparison/data logic. This is a display/scope correction, not authorization to change payment formulas or MOM snapshot behavior.
+- Verify the actual screen in each platform source and record build/runtime evidence before marking parity complete.
+
 ## Next packaging actions
 
 - [ ] Inspect the actual latest Android source package and choose its next unused Android build number.
