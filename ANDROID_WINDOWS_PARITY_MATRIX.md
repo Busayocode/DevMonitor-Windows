@@ -1,3 +1,13 @@
+## Agents database — editable contact import, photos, and location picker (2026-10-22)
+
+- Requirement source: user-approved scope tracked in GitHub issue #1.
+- Android status: **Needs verification** — inspect latest actual source; implement contact permission/selection, multi-value phone/email fields, address, contact thumbnail, editable details, duplicate review, and persisted map selection.
+- Windows/PC status: **Needs verification** — inspect latest actual source; implement the appropriate desktop contact-import path if available and equivalent editable fields/map-picker behavior. Clearly document platform-specific constraints rather than pretending Android contact APIs exist on Windows.
+- Shared data behavior: every field remains editable after import; repeated phone/email values can be added/removed; photo can be replaced/cleared; no silent overwrites on duplicate matches; imported postal address remains distinct from selected coordinates.
+- Location must be picked and saved in DevMonitor, not merely open Google Maps. Support search/manual pin selection and explicit save; current-device location is optional and permission-dependent.
+- Protect profile separation and finalized payment/MOM business rules.
+- Status remains **Needs verification** until actual source inspection and build/runtime evidence are recorded for each affected platform.
+
 # DevMonitor Android–Windows Parity Register
 
 Last updated: 2026-10-21
