@@ -227,6 +227,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           DRIVE_API_KEY: ${{ secrets.DRIVE_REPORT_API_KEY }}
+          GOOGLE_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: |
           set -euo pipefail
           test -n "$KEYSTORE_B64" || {
@@ -266,6 +267,13 @@ jobs:
             echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD"
             echo "DRIVE_REPORT_API_KEY=$DRIVE_API_KEY"
           } >> "$PROJECT_DIR/gradle.properties"
+
+          if [ -n "$GOOGLE_MAPS_KEY" ]; then
+            printf 'GOOGLE_MAPS_API_KEY=%s\n' "$GOOGLE_MAPS_KEY" >> "$PROJECT_DIR/gradle.properties"
+            echo "Google Maps API key configured for this build."
+          else
+            echo "WARNING: GOOGLE_MAPS_API_KEY is not set; the agent map picker will show setup guidance."
+          fi
 
       - name: Build signed release APK
         shell: bash
