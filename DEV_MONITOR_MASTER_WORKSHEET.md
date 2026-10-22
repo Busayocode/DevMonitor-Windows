@@ -1,3 +1,19 @@
+## Agents database upgrade — next approved work (2026-10-22)
+
+Tracked in GitHub issue #1: https://github.com/Busayocode/DevMonitor-Windows/issues/1
+
+Scope: editable contact import including name, all phone numbers, email addresses, postal address, and existing thumbnail/photo; reviewable duplicate detection/merge; all agent fields editable after import; and a real map location picker that persists coordinates to the agent record. The picker must support place/address search and manual map-pin selection with explicit confirmation/save. Current-device location is optional and permission-dependent. Keep postal address distinct from saved coordinates.
+
+Implementation order:
+1. Confirm the latest Android and Windows ZIPs and inspect actual Agents screens, data model/schema, and map integration.
+2. Plan safe schema migration for multiple phones/emails and photo storage/reference without data loss.
+3. Implement contact selection/import preview, duplicate review, and complete editable agent detail form.
+4. Implement the saveable map picker and edit/reopen/clear flows.
+5. Compare Android/Windows behavior and update the parity register/change log.
+6. Build each affected platform and report compile/build evidence separately from device/runtime tests.
+
+Guardrails: do not change finalized payment/MOM logic, cycle/snapshot rules, targets, or reach rules. Preserve profile-specific operational data. Current repository ZIP references must be refreshed before implementation; the documentation baseline does not prove they are still the newest packages.
+
 # DevMonitor Master Development Worksheet
 
 Last updated: 2026-10-21
