@@ -26,7 +26,6 @@ jobs:
       - name: Detect source ZIPs by their contents
         id: detect
         shell: bash
-        env:
         run: |
           set -euo pipefail
           python3 <<'PY'
@@ -62,7 +61,7 @@ jobs:
 
           def natural_key(value):
               return [
-                  int(part) if part.isdigit() else part.lower()
+                  (0, int(part)) if part.isdigit() else (1, part.lower())
                   for part in re.split(r"(\d+)", str(value))
               ]
 
@@ -172,26 +171,18 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Select DevMonitor ZIP
+      - name: Select detected Android ZIP
         shell: bash
+        env:
+          ZIP_FILE: ${{ needs.detect.outputs.android_zip }}
         run: |
           set -euo pipefail
-          ZIP_FILE=""
-          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
-            mapfile -t CHANGED_ZIPS < <(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | grep -E '^DevMonitor-.*\.zip$' || true)
-            if [ "${#CHANGED_ZIPS[@]}" -gt 0 ]; then
-              ZIP_FILE="$(printf '%s\n' "${CHANGED_ZIPS[@]}" | sort -V | tail -n 1)"
-            fi
-          fi
-          if [ -z "$ZIP_FILE" ]; then
-            ZIP_FILE="$(find . -maxdepth 1 -type f -name 'DevMonitor-*.zip' -printf '%f\n' | sort -V | tail -n 1)"
-          fi
-          if [ -z "$ZIP_FILE" ] || [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: No DevMonitor ZIP was found."
+          [ -n "$ZIP_FILE" ] && [ -f "$ZIP_FILE" ] || {
+            echo "ERROR: Detected Android source ZIP not found: $ZIP_FILE"
             exit 1
-          fi
+          }
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-          echo "Selected ZIP: $ZIP_FILE"
+          echo "Selected Android ZIP: $ZIP_FILE"
 
       - name: Extract DevMonitor project
         shell: bash
