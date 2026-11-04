@@ -221,9 +221,9 @@ jobs:
           gradle = builds[0].read_text(encoding="utf-8")
           if "return@forEachIndexed" in source:
               raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
-          if not re.search(r'message = "Send failed: \$code"\\s*\\n\\s*continue', source):
+          if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
-          if not re.search(r'versionCode\\s*=\\s*337', gradle):
+          if not re.search(r'versionCode\s*=\s*337', gradle):
               raise SystemExit("Android ZIP must already declare versionCode 337.")
           if 'versionName = "4.7.0-TARGET-KOTLIN-RECHECK-CONTINUE-FIX-V337"' not in gradle:
               raise SystemExit("Android ZIP versionName does not match the v337 source.")
@@ -290,11 +290,11 @@ jobs:
           cat "$FILTERED_PROPERTIES" > "$PROJECT_DIR/gradle.properties"
           rm -f "$FILTERED_PROPERTIES"
           {
-            printf 'RELEASE_STORE_FILE=%s\\n' "$KEYSTORE_PATH"
-            printf 'RELEASE_STORE_PASSWORD=%s\\n' "$STORE_PASSWORD"
-            printf 'RELEASE_KEY_ALIAS=%s\\n' "$KEY_ALIAS"
-            printf 'RELEASE_KEY_PASSWORD=%s\\n' "$KEY_PASSWORD"
-            printf 'DRIVE_REPORT_API_KEY=%s\\n' "$DRIVE_API_KEY"
+            printf 'RELEASE_STORE_FILE=%s\n' "$KEYSTORE_PATH"
+            printf 'RELEASE_STORE_PASSWORD=%s\n' "$STORE_PASSWORD"
+            printf 'RELEASE_KEY_ALIAS=%s\n' "$KEY_ALIAS"
+            printf 'RELEASE_KEY_PASSWORD=%s\n' "$KEY_PASSWORD"
+            printf 'DRIVE_REPORT_API_KEY=%s\n' "$DRIVE_API_KEY"
           } >> "$PROJECT_DIR/gradle.properties"
 
           # Fail early with a clear diagnostic if the signing file is not at the
