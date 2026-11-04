@@ -202,48 +202,32 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Project directory: $PROJECT_DIR"
 
-      - name: Apply Android v337 queued-Recheck compile correction
+      - name: Verify Android v337 source correction is in the ZIP
         shell: bash
         run: |
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
+          import re
 
-          roots = list(Path("build-source").rglob("MainActivity.kt"))
-          if len(roots) != 1:
-              raise SystemExit(f"Expected exactly one MainActivity.kt, found {len(roots)}")
-          main = roots[0]
-          source = main.read_text(encoding="utf-8")
-          stale = "return@forEachIndexed"
-          if stale in source:
-              source = source.replace(stale, "continue", 1)
-              main.write_text(source, encoding="utf-8")
-          elif "return@forEachIndexed" not in source and "return@forEachIndexed" not in source:
-              # Idempotent only for the already-corrected source.
-              if "continue" not in source:
-                  raise SystemExit("Could not verify the queued Recheck send-failure branch.")
-          build = main.parent.parent.parent.parent / "build.gradle.kts"
-          if not build.is_file():
-              # Find the app module build file relative to the extracted project.
-              candidates = list(Path("build-source").rglob("app/build.gradle.kts"))
-              if len(candidates) != 1:
-                  raise SystemExit("Could not locate the Android app/build.gradle.kts.")
-              build = candidates[0]
-          gradle = build.read_text(encoding="utf-8")
-          if "versionCode = 336" in gradle:
-              gradle = gradle.replace("versionCode = 336", "versionCode = 337", 1)
-              gradle = gradle.replace(
-                  'versionName = "4.7.0-TARGET-QUEUED-RECHECK-GRADLE-PROPERTIES-FIX-V336"',
-                  'versionName = "4.7.0-TARGET-KOTLIN-RECHECK-CONTINUE-FIX-V337"', 1
+          mains = list(Path("build-source").rglob("MainActivity.kt"))
+          builds = list(Path("build-source").rglob("app/build.gradle.kts"))
+          if len(mains) != 1 or len(builds) != 1:
+              raise SystemExit(
+                  f"Expected one MainActivity.kt and one app/build.gradle.kts; "
+                  f"found {len(mains)} and {len(builds)}."
               )
-              build.write_text(gradle, encoding="utf-8")
-          elif "versionCode = 337" not in gradle:
-              raise SystemExit("Unexpected Android version metadata; refusing an unreviewed patch.")
-          if "versionCode = 337" not in build.read_text(encoding="utf-8"):
-              raise SystemExit("Android versionCode 337 verification failed.")
-          if "return@forEachIndexed" in main.read_text(encoding="utf-8"):
-              raise SystemExit("Stale Kotlin return label remains.")
-          print("Applied/verified Android v337 source correction and version metadata.")
+          source = mains[0].read_text(encoding="utf-8")
+          gradle = builds[0].read_text(encoding="utf-8")
+          if "return@forEachIndexed" in source:
+              raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
+          if not re.search(r'message = "Send failed: \$code"\\s*\\n\\s*continue', source):
+              raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
+          if not re.search(r'versionCode\\s*=\\s*337', gradle):
+              raise SystemExit("Android ZIP must already declare versionCode 337.")
+          if 'versionName = "4.7.0-TARGET-KOTLIN-RECHECK-CONTINUE-FIX-V337"' not in gradle:
+              raise SystemExit("Android ZIP versionName does not match the v337 source.")
+          print("Android v337 Kotlin correction and version metadata verified in source ZIP; no build-time source patching.")
           PY
 
       - name: Generate automated What's New release notes
@@ -289,19 +273,36 @@ jobs:
           [ -n "$KEY_ALIAS" ] || { echo "ERROR: RELEASE_KEY_ALIAS secret is missing."; exit 1; }
           [ -n "$KEY_PASSWORD" ] || { echo "ERROR: RELEASE_KEY_PASSWORD secret is missing."; exit 1; }
           [ -n "$DRIVE_API_KEY" ] || { echo "ERROR: DRIVE_REPORT_API_KEY secret is missing."; exit 1; }
-          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$PROJECT_DIR/fieldpulse-release.jks"
-          printf '%s\n' "RELEASE_STORE_FILE=fieldpulse-release.jks" >> "$PROJECT_DIR/gradle.properties"
-          printf '%s\n' "RELEASE_STORE_PASSWORD=$STORE_PASSWORD" >> "$PROJECT_DIR/gradle.properties"
-          printf '%s\n' "RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$PROJECT_DIR/gradle.properties"
-          printf '%s\n' "RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$PROJECT_DIR/gradle.properties"
+          # Android's release signing config is declared in app/build.gradle.kts.
+          # Gradle's file(...) therefore resolves relative paths from the app module,
+          # not from the repository root. Put the keystore exactly where Gradle expects it.
+          KEYSTORE_PATH="$PROJECT_DIR/app/fieldpulse-release.jks"
+          mkdir -p "$PROJECT_DIR/app"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+          [ -s "$KEYSTORE_PATH" ] || { echo "ERROR: Decoded release keystore is empty."; exit 1; }
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          echo "Release keystore decoded and alias verified (contents hidden)."
 
-          # Match the phone build: write the API key as a top-level Gradle project
-          # property before Gradle starts. Remove any stale duplicate first.
+          # Replace any previous release properties, then set an absolute keystore path
+          # so Gradle cannot resolve it against the wrong project directory.
           FILTERED_PROPERTIES="$(mktemp)"
-          sed '/^[[:space:]]*DRIVE_REPORT_API_KEY[[:space:]]*=/d' "$PROJECT_DIR/gradle.properties" > "$FILTERED_PROPERTIES"
+          sed -E '/^[[:space:]]*RELEASE_STORE_FILE[[:space:]]*=/d; /^[[:space:]]*RELEASE_STORE_PASSWORD[[:space:]]*=/d; /^[[:space:]]*RELEASE_KEY_ALIAS[[:space:]]*=/d; /^[[:space:]]*RELEASE_KEY_PASSWORD[[:space:]]*=/d; /^[[:space:]]*DRIVE_REPORT_API_KEY[[:space:]]*=/d' "$PROJECT_DIR/gradle.properties" > "$FILTERED_PROPERTIES"
           cat "$FILTERED_PROPERTIES" > "$PROJECT_DIR/gradle.properties"
           rm -f "$FILTERED_PROPERTIES"
-          printf 'DRIVE_REPORT_API_KEY=%s\n' "$DRIVE_API_KEY" >> "$PROJECT_DIR/gradle.properties"
+          {
+            printf 'RELEASE_STORE_FILE=%s\\n' "$KEYSTORE_PATH"
+            printf 'RELEASE_STORE_PASSWORD=%s\\n' "$STORE_PASSWORD"
+            printf 'RELEASE_KEY_ALIAS=%s\\n' "$KEY_ALIAS"
+            printf 'RELEASE_KEY_PASSWORD=%s\\n' "$KEY_PASSWORD"
+            printf 'DRIVE_REPORT_API_KEY=%s\\n' "$DRIVE_API_KEY"
+          } >> "$PROJECT_DIR/gradle.properties"
+
+          # Fail early with a clear diagnostic if the signing file is not at the
+          # exact path Gradle will consume.
+          [ -f "$PROJECT_DIR/app/fieldpulse-release.jks" ] || {
+            echo "ERROR: Release keystore is not at the Android app module signing path."
+            exit 1
+          }
 
       - name: Verify Firebase package and release identity record
         shell: bash
