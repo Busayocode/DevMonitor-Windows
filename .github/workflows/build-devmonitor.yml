@@ -202,6 +202,50 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Project directory: $PROJECT_DIR"
 
+      - name: Apply Android v337 queued-Recheck compile correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          roots = list(Path("build-source").rglob("MainActivity.kt"))
+          if len(roots) != 1:
+              raise SystemExit(f"Expected exactly one MainActivity.kt, found {len(roots)}")
+          main = roots[0]
+          source = main.read_text(encoding="utf-8")
+          stale = "return@forEachIndexed"
+          if stale in source:
+              source = source.replace(stale, "continue", 1)
+              main.write_text(source, encoding="utf-8")
+          elif "return@forEachIndexed" not in source and "return@forEachIndexed" not in source:
+              # Idempotent only for the already-corrected source.
+              if "continue" not in source:
+                  raise SystemExit("Could not verify the queued Recheck send-failure branch.")
+          build = main.parent.parent.parent.parent / "build.gradle.kts"
+          if not build.is_file():
+              # Find the app module build file relative to the extracted project.
+              candidates = list(Path("build-source").rglob("app/build.gradle.kts"))
+              if len(candidates) != 1:
+                  raise SystemExit("Could not locate the Android app/build.gradle.kts.")
+              build = candidates[0]
+          gradle = build.read_text(encoding="utf-8")
+          if "versionCode = 336" in gradle:
+              gradle = gradle.replace("versionCode = 336", "versionCode = 337", 1)
+              gradle = gradle.replace(
+                  'versionName = "4.7.0-TARGET-QUEUED-RECHECK-GRADLE-PROPERTIES-FIX-V336"',
+                  'versionName = "4.7.0-TARGET-KOTLIN-RECHECK-CONTINUE-FIX-V337"', 1
+              )
+              build.write_text(gradle, encoding="utf-8")
+          elif "versionCode = 337" not in gradle:
+              raise SystemExit("Unexpected Android version metadata; refusing an unreviewed patch.")
+          if "versionCode = 337" not in build.read_text(encoding="utf-8"):
+              raise SystemExit("Android versionCode 337 verification failed.")
+          if "return@forEachIndexed" in main.read_text(encoding="utf-8"):
+              raise SystemExit("Stale Kotlin return label remains.")
+          print("Applied/verified Android v337 source correction and version metadata.")
+          PY
+
       - name: Generate automated What's New release notes
         shell: bash
         run: |
