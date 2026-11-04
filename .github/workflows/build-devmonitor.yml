@@ -1,13 +1,167 @@
-
-name: DevMonitor Android Release Build
+name: Build DevMonitor Android and Windows
 
 on:
-  workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [main, master]
+    paths:
+      - '**/*.zip'
+      - '.github/workflows/build-devmonitor.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build-release:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      android_zip: ${{ steps.detect.outputs.android_zip }}
+      windows_zip: ${{ steps.detect.outputs.windows_zip }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect source ZIPs by their contents
+        id: detect
+        shell: bash
+        env:
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import os, re, subprocess, zipfile
+          from pathlib import Path
+
+          event = os.environ.get("GITHUB_EVENT_NAME", "")
+          candidates = []
+
+          if event == "push":
+              result = subprocess.run(
+                  ["git", "diff-tree", "--no-commit-id",
+                   "--name-only", "-r", os.environ["GITHUB_SHA"]],
+                  check=True, text=True, capture_output=True
+              )
+              candidates = [
+                  Path(x) for x in result.stdout.splitlines()
+                  if x.lower().endswith(".zip")
+              ]
+
+          if not candidates:
+              result = subprocess.run(
+                  ["git", "ls-files", "-z", "*.zip"],
+                  check=True, capture_output=True
+              )
+              candidates = [
+                  Path(x.decode()) for x in result.stdout.split(b"\0") if x
+              ]
+
+          candidates = list(dict.fromkeys(
+              p for p in candidates if p.is_file()
+          ))
+
+          def natural_key(value):
+              return [
+                  int(part) if part.isdigit() else part.lower()
+                  for part in re.split(r"(\d+)", str(value))
+              ]
+
+          android = []
+          windows = []
+          scanned = set()
+
+          def scan(path):
+              if path in scanned or not path.is_file():
+                  return
+              scanned.add(path)
+
+              try:
+                  with zipfile.ZipFile(path) as archive:
+                      names = {
+                          name.replace("\\", "/").lower().lstrip("./")
+                          for name in archive.namelist()
+                          if not name.endswith("/")
+                      }
+              except (OSError, zipfile.BadZipFile) as exc:
+                  print(f"Skipping invalid ZIP {path}: {exc}")
+                  return
+
+              has_wrapper = any(
+                  name in ("gradlew", "gradlew.bat")
+                  or name.endswith("/gradlew")
+                  or name.endswith("/gradlew.bat")
+                  for name in names
+              )
+
+              has_settings = any(
+                  name in ("settings.gradle", "settings.gradle.kts")
+                  or name.endswith("/settings.gradle")
+                  or name.endswith("/settings.gradle.kts")
+                  for name in names
+              )
+
+              has_android_build = any(
+                  name in ("app/build.gradle", "app/build.gradle.kts")
+                  or name.endswith("/app/build.gradle")
+                  or name.endswith("/app/build.gradle.kts")
+                  for name in names
+              )
+
+              has_windows_project = any(
+                  name == "devmonitor.windows.csproj"
+                  or name.endswith("/devmonitor.windows.csproj")
+                  for name in names
+              )
+
+              if has_wrapper and has_settings and has_android_build:
+                  android.append(path)
+                  print(f"Android source detected: {path}")
+
+              if has_windows_project:
+                  windows.append(path)
+                  print(f"Windows source detected: {path}")
+
+          for candidate in candidates:
+              scan(candidate)
+
+          # If a push did not contain a recognised source ZIP,
+          # inspect all tracked ZIPs before failing.
+          if event == "push" and not android and not windows:
+              result = subprocess.run(
+                  ["git", "ls-files", "-z", "*.zip"],
+                  check=True, capture_output=True
+              )
+              for raw in result.stdout.split(b"\0"):
+                  if raw:
+                      scan(Path(raw.decode()))
+
+          android_zip = (
+              str(sorted(set(android), key=natural_key)[-1])
+              if android else ""
+          )
+          windows_zip = (
+              str(sorted(set(windows), key=natural_key)[-1])
+              if windows else ""
+          )
+
+          if not android_zip and not windows_zip:
+              raise SystemExit(
+                  "No valid Android or Windows source ZIP was found. "
+                  "Ensure a source ZIP is committed to the repository "
+                  "and contains its project files."
+              )
+
+          print(f"Selected Android ZIP: {android_zip or '(none)'}")
+          print(f"Selected Windows ZIP: {windows_zip or '(none)'}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"android_zip={android_zip}\n")
+              out.write(f"windows_zip={windows_zip}\n")
+          PY
+
+  build-android:
+    needs: detect
+    if: needs.detect.outputs.android_zip != ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -88,14 +242,14 @@ jobs:
       - name: Prepare release secrets
         shell: bash
         env:
-          KEYSTORE_B64: ${{ secrets.FIELD_PULSE_RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_B64: ${{ secrets.FIELD_PULSE_RELEASE_KEYSTORE_BASE64 || secrets.RELEASE_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           DRIVE_API_KEY: ${{ secrets.DRIVE_REPORT_API_KEY }}
         run: |
           set -euo pipefail
-          [ -n "$KEYSTORE_B64" ] || { echo "ERROR: FIELD_PULSE_RELEASE_KEYSTORE_BASE64 secret is missing."; exit 1; }
+          [ -n "$KEYSTORE_B64" ] || { echo "ERROR: Configure FIELD_PULSE_RELEASE_KEYSTORE_BASE64 or RELEASE_KEYSTORE_BASE64."; exit 1; }
           [ -n "$STORE_PASSWORD" ] || { echo "ERROR: RELEASE_STORE_PASSWORD secret is missing."; exit 1; }
           [ -n "$KEY_ALIAS" ] || { echo "ERROR: RELEASE_KEY_ALIAS secret is missing."; exit 1; }
           [ -n "$KEY_PASSWORD" ] || { echo "ERROR: RELEASE_KEY_PASSWORD secret is missing."; exit 1; }
@@ -204,4 +358,157 @@ jobs:
           echo "Package: com.aziitech.simregmonitor"
           echo "Release alias: fieldpulse-release"
           echo "Release SHA-1: 8A:C3:1B:96:52:7D:F8:96:83:D5:84:A6:D5:99:10:0D:88:5D:F5:36"
-          
+
+  build-windows:
+    needs: detect
+    if: needs.detect.outputs.windows_zip != ''
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Extract Windows source
+        shell: pwsh
+        env:
+          SOURCE_ZIP: ${{ needs.detect.outputs.windows_zip }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path $env:SOURCE_ZIP)) {
+            throw "Selected Windows ZIP not found: $env:SOURCE_ZIP"
+          }
+
+          if (Test-Path .\build-source) {
+            Remove-Item .\build-source -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path .\build-source | Out-Null
+          Expand-Archive -LiteralPath $env:SOURCE_ZIP `
+            -DestinationPath .\build-source -Force
+
+          $project = Get-ChildItem .\build-source `
+            -Filter 'DevMonitor.Windows.csproj' -File -Recurse |
+            Select-Object -First 1
+
+          if (-not $project) {
+            throw 'DevMonitor.Windows.csproj was not found inside the ZIP.'
+          }
+
+          $projectDir = $project.Directory.FullName
+          "PROJECT_DIR=$projectDir" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Windows project directory: $projectDir"
+
+      - name: Restore Windows solution
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $solution = Join-Path $env:PROJECT_DIR 'DevMonitor.Windows.sln'
+
+          if (Test-Path $solution) {
+            dotnet restore $solution
+          } else {
+            dotnet restore (Join-Path $env:PROJECT_DIR 'DevMonitor.Windows.csproj')
+          }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "dotnet restore failed: $LASTEXITCODE"
+          }
+
+      - name: Publish self-contained Windows application
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $outDir = Join-Path $env:PROJECT_DIR 'publish'
+
+          dotnet publish `
+            (Join-Path $env:PROJECT_DIR 'DevMonitor.Windows.csproj') `
+            -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -o $outDir
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows publish failed: $LASTEXITCODE"
+          }
+          if (-not (Test-Path (Join-Path $outDir 'DevMonitor.exe'))) {
+            throw 'DevMonitor.exe was not produced.'
+          }
+
+      - name: Publish HTTPS sync relay when included
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $relayProject = Join-Path $env:PROJECT_DIR `
+            'SyncRelay\DevMonitor.SyncRelay.csproj'
+
+          if (Test-Path $relayProject) {
+            $relayOut = Join-Path $env:PROJECT_DIR 'relay-publish'
+            dotnet publish $relayProject -c Release -r win-x64 `
+              --self-contained true -p:PublishSingleFile=true `
+              -p:IncludeNativeLibrariesForSelfExtract=true -o $relayOut
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Sync relay publish failed: $LASTEXITCODE"
+            }
+          } else {
+            Write-Host 'No SyncRelay project in this ZIP; skipping relay.'
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $iss = Join-Path $env:PROJECT_DIR 'DevMonitor-Setup.iss'
+
+          if (-not (Test-Path $iss)) {
+            throw 'DevMonitor-Setup.iss was not found.'
+          }
+
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' $iss
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed: $LASTEXITCODE"
+          }
+
+          $installerDir = Join-Path $env:PROJECT_DIR 'installer'
+          $installer = Get-ChildItem $installerDir `
+            -Filter 'DevMonitor-Setup-*.exe' -File `
+            -ErrorAction SilentlyContinue | Select-Object -First 1
+
+          if (-not $installer) {
+            throw "Installer EXE was not produced in $installerDir. Check OutputDir in DevMonitor-Setup.iss."
+          }
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Windows-Installer
+          path: ${{ env.PROJECT_DIR }}\installer\DevMonitor-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload portable Windows application
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Windows-Portable
+          path: ${{ env.PROJECT_DIR }}\publish\**
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload sync relay when built
+        if: ${{ hashFiles('build-source/**/SyncRelay/DevMonitor.SyncRelay.csproj') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Sync-Relay
+          path: ${{ env.PROJECT_DIR }}\relay-publish\**
+          if-no-files-found: warn
+          retention-days: 30
