@@ -198,7 +198,9 @@ jobs:
           set -euo pipefail
           GRADLEW="$(find build-source -maxdepth 6 -type f -name gradlew | head -n 1)"
           [ -n "$GRADLEW" ] || { echo "ERROR: Gradle wrapper not found."; exit 1; }
-          PROJECT_DIR="$(dirname "$GRADLEW")"
+          # Resolve once to an absolute path. Gradle properties must not
+          # contain a relative path that gets re-based from the app module.
+          PROJECT_DIR="$(cd "$(dirname "$GRADLEW")" && pwd -P)"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Project directory: $PROJECT_DIR"
 
