@@ -515,26 +515,6 @@ jobs:
             throw 'DevMonitor.exe was not produced.'
           }
 
-      - name: Publish HTTPS sync relay when included
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $relayProject = Join-Path $env:PROJECT_DIR `
-            'SyncRelay\DevMonitor.SyncRelay.csproj'
-
-          if (Test-Path $relayProject) {
-            $relayOut = Join-Path $env:PROJECT_DIR 'relay-publish'
-            dotnet publish $relayProject -c Release -r win-x64 `
-              --self-contained true -p:PublishSingleFile=true `
-              -p:IncludeNativeLibrariesForSelfExtract=true -o $relayOut
-
-            if ($LASTEXITCODE -ne 0) {
-              throw "Sync relay publish failed: $LASTEXITCODE"
-            }
-          } else {
-            Write-Host 'No SyncRelay project in this ZIP; skipping relay.'
-          }
-
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
@@ -579,11 +559,3 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload sync relay when built
-        if: ${{ hashFiles('build-source/**/SyncRelay/DevMonitor.SyncRelay.csproj') != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: DevMonitor-Sync-Relay
-          path: ${{ env.PROJECT_DIR }}\relay-publish\**
-          if-no-files-found: warn
-          retention-days: 30
