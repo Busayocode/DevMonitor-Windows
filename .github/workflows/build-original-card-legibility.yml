@@ -59,6 +59,11 @@ jobs:
               raise SystemExit("Stale duplicate PNG writer remains")
           p.write_text(s)
           PY
+      - name: Apply SMS Checker ordering, Recheck priority and partner timeout improvements
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 hybrid-overrides/apply-sms-checker-improvements.py build-android/app/src/main/java/com/aziitech/simregmonitor/MainActivity.kt
           grep -n 'versionCode\|versionName' build-android/app/build.gradle.kts
           grep -n 'sharePaymentCardPdfAsync' build-android/app/src/main/java/com/aziitech/simregmonitor/ReportExportPack.kt
           grep -n 'Share this card as PDF' build-android/app/src/main/java/com/aziitech/simregmonitor/ManagementScreens.kt
