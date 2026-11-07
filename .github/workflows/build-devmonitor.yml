@@ -238,6 +238,13 @@ jobs:
           [ -f "$TARGET" ] || { echo "ERROR: SMS Checker history source file not found in Android ZIP."; exit 1; }
           cp "$OVERLAY" "$TARGET"
           echo "Applied full-screen SMS Checker History page overlay."
+          MAIN="$PROJECT_DIR/app/src/main/java/com/aziitech/simregmonitor/MainActivity.kt"
+          PATCH="trial-overlays/android/scripts/compact_sms_checker.py"
+          [ -f "$MAIN" ] && [ -f "$PATCH" ] || { echo "ERROR: SMS Checker compact-layout patch inputs are missing."; exit 1; }
+          cp "$MAIN" MainActivity.kt
+          python3 "$PATCH"
+          cp MainActivity.kt "$MAIN"
+          echo "Applied compact SMS Checker controls and one-line utility labels."
 
       - name: Verify Android v340 source and trial UI overlay
         shell: bash
