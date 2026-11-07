@@ -204,7 +204,18 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Project directory: $PROJECT_DIR"
 
-      - name: Verify Android v337 source correction is in the ZIP
+      - name: Apply trial Android UI overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          OVERLAY="trial-overlays/android/app/src/main/java/com/aziitech/simregmonitor/SmsCheckerHistoryDialog.kt"
+          TARGET="$PROJECT_DIR/app/src/main/java/com/aziitech/simregmonitor/SmsCheckerHistoryDialog.kt"
+          [ -f "$OVERLAY" ] || { echo "ERROR: Trial SMS History page overlay is missing."; exit 1; }
+          [ -f "$TARGET" ] || { echo "ERROR: SMS Checker history source file not found in Android ZIP."; exit 1; }
+          cp "$OVERLAY" "$TARGET"
+          echo "Applied full-screen SMS Checker History page overlay."
+
+      - name: Verify Android v340 source and trial UI overlay
         shell: bash
         run: |
           set -euo pipefail
@@ -214,22 +225,24 @@ jobs:
 
           mains = list(Path("build-source").rglob("MainActivity.kt"))
           builds = list(Path("build-source").rglob("app/build.gradle.kts"))
-          if len(mains) != 1 or len(builds) != 1:
+          histories = list(Path("build-source").rglob("SmsCheckerHistoryDialog.kt"))
+          if len(mains) != 1 or len(builds) != 1 or len(histories) != 1:
               raise SystemExit(
-                  f"Expected one MainActivity.kt and one app/build.gradle.kts; "
-                  f"found {len(mains)} and {len(builds)}."
+                  f"Expected one MainActivity.kt, app/build.gradle.kts and SmsCheckerHistoryDialog.kt; "
+                  f"found {len(mains)}, {len(builds)} and {len(histories)}."
               )
           source = mains[0].read_text(encoding="utf-8")
           gradle = builds[0].read_text(encoding="utf-8")
+          history = histories[0].read_text(encoding="utf-8")
           if "return@forEachIndexed" in source:
               raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
           if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
-          if not re.search(r'versionCode\s*=\s*337', gradle):
-              raise SystemExit("Android ZIP must already declare versionCode 337.")
-          if 'versionName = "4.7.0-TARGET-KOTLIN-RECHECK-CONTINUE-FIX-V337"' not in gradle:
-              raise SystemExit("Android ZIP versionName does not match the v337 source.")
-          print("Android v337 Kotlin correction and version metadata verified in source ZIP; no build-time source patching.")
+          if not re.search(r'versionCode\s*=\s*340', gradle):
+              raise SystemExit("Android ZIP must already declare versionCode 340.")
+          if "usePlatformDefaultWidth = false" not in history or "SMS Checker history" not in history:
+              raise SystemExit("Full-screen SMS Checker History page overlay is not present.")
+          print("Android v340 source and full-screen SMS Checker History page overlay verified.")
           PY
 
       - name: Generate automated What's New release notes
