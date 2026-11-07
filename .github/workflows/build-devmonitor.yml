@@ -367,9 +367,46 @@ jobs:
           EXPECTED='8A:C3:1B:96:52:7D:F8:96:83:D5:84:A6:D5:99:10:0D:88:5D:F5:36'
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           [ -n "$APKSIGNER" ] || { echo "ERROR: Android apksigner not found."; exit 1; }
-          ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-1 digest: //p' | head -n 1)"
-          echo "Release APK SHA-1: $ACTUAL"
-          [ "$ACTUAL" = "$EXPECTED" ] || { echo "ERROR: APK signing SHA-1 does not match the FieldPulse release certificate."; exit 1; }
+          # Capture apksigner output and parse it in Python rather than relying on
+          # an exact sed prefix: Android build-tools versions can vary in formatting.
+          python3 - "$APKSIGNER" "$APK" "$EXPECTED" <<'PY'
+          import re
+          import subprocess
+          import sys
+
+          apksigner, apk, expected = sys.argv[1:4]
+          result = subprocess.run(
+              [apksigner, "verify", "--verbose", "--print-certs", apk],
+              text=True, capture_output=True
+          )
+          output = (result.stdout or "") + "\\n" + (result.stderr or "")
+          if result.returncode != 0:
+              print("ERROR: apksigner verification command failed.")
+              print(output.strip())
+              raise SystemExit(result.returncode)
+
+          match = re.search(
+              r"certificate\\s+SHA-1\\s+digest\\s*:\\s*([0-9a-fA-F:]+)",
+              output,
+              re.IGNORECASE
+          )
+          if not match:
+              print("ERROR: apksigner completed but no SHA-1 certificate digest was found.")
+              print("apksigner diagnostic output:")
+              print(output.strip())
+              raise SystemExit(1)
+
+          actual = match.group(1).replace(":", "").lower()
+          expected_normalized = expected.replace(":", "").lower()
+          print("Release APK SHA-1: " + ":".join(
+              actual[i:i+2].upper() for i in range(0, len(actual), 2)
+          ))
+          if actual != expected_normalized:
+              raise SystemExit(
+                  "ERROR: APK signing SHA-1 does not match the FieldPulse release certificate."
+              )
+          print("Release APK certificate identity verified.")
+          PY
 
       - name: Rename release APK
         shell: bash
