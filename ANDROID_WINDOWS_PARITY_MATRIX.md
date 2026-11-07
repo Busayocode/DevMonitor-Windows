@@ -107,10 +107,10 @@ This register is a coordination mechanism, not an automated source-code diff ser
 
 | Capability | Android v338 | Windows/PC | Status |
 |---|---|---|---|
-| Separate Device Monitor daily history database | `sms_checker_devices_history.db` | Not assessed in this increment | Android source added; build/device test pending |
+| Separate Device Monitor daily history database | `sms_checker_devices_history.db` | Not assessed in this increment | Android source added; GitHub Android release build passed; physical-device test pending |
 | Separate My Partners daily history database | `sms_checker_partners_history.db` | Not assessed in this increment | Android source added; build/device test pending |
-| Current + previous calendar month retention | Implemented in Android history store | Not assessed | Android source added; test month rollover |
-| Whole-day report and per-code history | Date selection shows latest daily result per code; per-code view retains all completed rechecks | Not assessed | Android source added; UI/device test pending |
+| Current + previous calendar month retention | Implemented in Android history store | Not assessed | Android source added; GitHub Android release build passed; month-rollover test pending |
+| Whole-day report and per-code history | Date selection shows latest daily result per code; per-code view retains all completed rechecks | Not assessed | Android source added; GitHub Android release build passed; UI/device test pending |
 | Legacy history migration | Imports existing successful/not-found entries once per menu | Not assessed | Limited to records already present in legacy history |
 | Cloud backup of history DBs | Not included in existing single-database Drive backup | Not assessed | Separate follow-up |
 
