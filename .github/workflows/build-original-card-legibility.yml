@@ -38,6 +38,16 @@ jobs:
           grep -n 'sharePaymentCardPdfAsync' build-android/app/src/main/java/com/aziitech/simregmonitor/ReportExportPack.kt
           grep -n 'Share this card as PDF' build-android/app/src/main/java/com/aziitech/simregmonitor/ManagementScreens.kt
           chmod +x build-android/gradlew
+      - name: Capture patched Kotlin sources for compile correction
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v339-kotlin-source-diagnostics
+          path: |
+            build-android/app/src/main/java/com/aziitech/simregmonitor/ReportExportPack.kt
+            build-android/app/src/main/java/com/aziitech/simregmonitor/MainActivity.kt
+          if-no-files-found: warn
+          retention-days: 7
       - name: Build Android debug APK
         shell: bash
         run: |
