@@ -90,8 +90,8 @@ jobs:
           if not all(len(x) == 1 for x in (gradle, main, store, dialog)):
               raise SystemExit("Expected exactly one Android app Gradle file, MainActivity, history store and history dialog.")
           g = gradle[0].read_text()
-          g, c1 = re.subn(r"versionCode\\s*=\\s*\\d+", "versionCode = 340", g, count=1)
-          g, c2 = re.subn(r'versionName\\s*=\\s*"[^"]+"', 'versionName = "4.7.0-TARGET-SMS-CHECKER-DAILY-HISTORY-ORIGINAL-CARD-LEGIBILITY-V340"', g, count=1)
+          g, c1 = re.subn(r"versionCode\s*=\s*\d+", "versionCode = 340", g, count=1)
+          g, c2 = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "4.7.0-TARGET-SMS-CHECKER-DAILY-HISTORY-ORIGINAL-CARD-LEGIBILITY-V340"', g, count=1)
           if c1 != 1 or c2 != 1:
               raise SystemExit("Could not safely update exactly one versionCode and versionName.")
           gradle[0].write_text(g)
@@ -141,11 +141,11 @@ jobs:
           cat "$FILTERED_PROPERTIES" > "$PROJECT_DIR/gradle.properties"
           rm -f "$FILTERED_PROPERTIES"
           {
-            printf 'RELEASE_STORE_FILE=%s\\n' "$KEYSTORE_PATH"
-            printf 'RELEASE_STORE_PASSWORD=%s\\n' "$STORE_PASSWORD"
-            printf 'RELEASE_KEY_ALIAS=%s\\n' "$KEY_ALIAS"
-            printf 'RELEASE_KEY_PASSWORD=%s\\n' "$KEY_PASSWORD"
-            printf 'DRIVE_REPORT_API_KEY=%s\\n' "$DRIVE_API_KEY"
+            printf 'RELEASE_STORE_FILE=%s\n' "$KEYSTORE_PATH"
+            printf 'RELEASE_STORE_PASSWORD=%s\n' "$STORE_PASSWORD"
+            printf 'RELEASE_KEY_ALIAS=%s\n' "$KEY_ALIAS"
+            printf 'RELEASE_KEY_PASSWORD=%s\n' "$KEY_PASSWORD"
+            printf 'DRIVE_REPORT_API_KEY=%s\n' "$DRIVE_API_KEY"
           } >> "$PROJECT_DIR/gradle.properties"
       - name: Verify Firebase package
         shell: bash
@@ -171,11 +171,11 @@ jobs:
           import re, subprocess, sys
           tool, apk, expected = sys.argv[1:]
           result = subprocess.run([tool, "verify", "--verbose", "--print-certs", apk], text=True, capture_output=True)
-          output = (result.stdout or "") + "\\n" + (result.stderr or "")
+          output = (result.stdout or "") + "\n" + (result.stderr or "")
           if result.returncode:
               print(output)
               raise SystemExit(result.returncode)
-          match = re.search(r"certificate\\s+SHA-1\\s+digest\\s*:\\s*([0-9a-fA-F:]+)", output, re.I)
+          match = re.search(r"certificate\s+SHA-1\s+digest\s*:\s*([0-9a-fA-F:]+)", output, re.I)
           if not match or match.group(1).replace(":", "").lower() != expected.replace(":", "").lower():
               print(output)
               raise SystemExit("APK signing SHA-1 does not match the registered release identity.")
