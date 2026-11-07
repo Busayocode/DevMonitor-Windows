@@ -11,13 +11,13 @@ def replace_exact(old, new, expected=1):
         raise SystemExit(f"Expected {expected} occurrence(s), found {count}: {old[:100]!r}")
     s = s.replace(old, new, expected)
 
-replace_exact("private const val DEFAULT_TIMEOUT_MS = 120_000L\\n",
-              "private const val DEFAULT_TIMEOUT_MS = 120_000L\\nprivate const val PARTNER_TIMEOUT_MS = 180_000L\\n")
-replace_exact("        val activeRunCodes = remember { mutableStateListOf<String>() }\\n",
-              "        val activeRunCodes = remember { mutableStateListOf<String>() }\\n"
-              "        // Temporary display priority for devices explicitly selected for Recheck.\\n"
-              "        // It changes only the visible ordering, never the stored device list or run order.\\n"
-              "        val recheckPriorityCodes = remember { mutableStateListOf<String>() }\\n")
+replace_exact("private const val DEFAULT_TIMEOUT_MS = 120_000L\n",
+              "private const val DEFAULT_TIMEOUT_MS = 120_000L\nprivate const val PARTNER_TIMEOUT_MS = 180_000L\n")
+replace_exact("        val activeRunCodes = remember { mutableStateListOf<String>() }\n",
+              "        val activeRunCodes = remember { mutableStateListOf<String>() }\n"
+              "        // Temporary display priority for devices explicitly selected for Recheck.\n"
+              "        // It changes only the visible ordering, never the stored device list or run order.\n"
+              "        val recheckPriorityCodes = remember { mutableStateListOf<String>() }\n")
 replace_exact("""                if (additions.isNotEmpty()) {
                     pendingRecheckCodes.addAll(additions)
                     additions.forEach { queuedRecheckRetryModes[it] = false }
@@ -39,8 +39,8 @@ replace_exact("""            runJob = scope.launch {
                 val initialCodes = requestedCodes
 """)
 replace_exact("Waiting up to 2 minutes: $code", "Waiting up to ${timeoutMinutes} minutes: $code", 2)
-replace_exact("System.currentTimeMillis() - start < DEFAULT_TIMEOUT_MS &&\\n                        matched == null",
-              "System.currentTimeMillis() - start < requestTimeoutMs &&\\n                        matched == null")
+replace_exact("System.currentTimeMillis() - start < DEFAULT_TIMEOUT_MS &&\n                        matched == null",
+              "System.currentTimeMillis() - start < requestTimeoutMs &&\n                        matched == null")
 replace_exact("secondsLeft = ((DEFAULT_TIMEOUT_MS - elapsed + 999) / 1000).coerceAtLeast(0)",
               "secondsLeft = ((requestTimeoutMs - elapsed + 999) / 1000).coerceAtLeast(0)")
 replace_exact("No valid response within 2 minutes. SMS delivery reporting indicated a sending/delivery problem; immediate retries were attempted.",
