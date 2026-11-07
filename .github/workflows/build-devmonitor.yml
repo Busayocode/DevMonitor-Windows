@@ -2,10 +2,11 @@ name: Build DevMonitor Android and Windows
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, trial/direct-google-account-lan-sync]
     paths:
       - '**/*.zip'
       - '.github/workflows/build-devmonitor.yml'
+      - 'trial-overlays/**'
   workflow_dispatch:
 
 permissions:
