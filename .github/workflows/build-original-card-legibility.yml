@@ -57,6 +57,11 @@ jobs:
               raise SystemExit("Expected to remove exactly one orphaned PNG-writer tail; removed " + str(count))
           if "bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }\n        bitmap.recycle()\n        return file\n    }\n\n    private fun drawWrapped" in s:
               raise SystemExit("Stale duplicate PNG writer remains")
+          card_label = "val label = Paint(anti).apply { color = 0xFF42566D.toInt(); textSize = 23f }"
+          clearer_card_label = "val label = Paint(anti).apply { color = 0xFF33495F.toInt(); textSize = 23f }"
+          if s.count(card_label) != 1:
+              raise SystemExit("Expected exactly one payment-card supporting-label paint")
+          s = s.replace(card_label, clearer_card_label, 1)
           p.write_text(s)
           PY
       - name: Apply SMS Checker ordering, Recheck priority and partner timeout improvements
