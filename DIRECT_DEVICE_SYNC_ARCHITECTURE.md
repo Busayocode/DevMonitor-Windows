@@ -1,6 +1,6 @@
 # Direct Android–Windows Device Sync — Trial Architecture
 
-Status: design and source audit; implementation not yet certified.
+Status: paired-platform source audit; Windows Firebase sign-in and account-bound pairing implementation pending. No sync feature is certified yet.
 Branch: `trial/direct-google-account-lan-sync`
 Repository: `Busayocode/DevMonitor-Windows`
 
@@ -25,7 +25,7 @@ The Google account establishes the account identity. Each installation must stil
 
 - Android currently stores a PC endpoint and a separate pairing key.
 - Initial setup uses a QR code/manual discovery and saves the key locally.
-- Windows has no equivalent Google/Firebase sign-in flow in this source package. Android's existing Google sign-in is exchanged for Firebase Authentication, but Windows does not yet authenticate the same Google identity.
+- Android v340 already performs Google sign-in and exchanges the Google ID token with `GoogleAuthProvider.getCredential(...)` followed by `FirebaseAuth.signInWithCredential(...)`; it also observes Firebase Auth state. This means Android already has the Firebase identity path needed for account matching. Windows v340 has no equivalent Firebase sign-in yet. The Android Google Drive access-token flow is separate and must not be treated as the Firebase account identity.
 - Android's near-real-time sync is currently scoped to an active foreground screen/session; this is not yet a fully background-resilient always-on sync service.
 - Direct LAN discovery does not traverse routers or mobile networks. Different-network sync needs a managed cloud transport or a secure peer-to-peer connectivity mechanism. It must not be represented as direct LAN communication.
 
@@ -46,11 +46,15 @@ The Windows installer already installs only the Windows app's `publish` director
 7. Keep the current sync allow-list: do not transfer payment/MOM records, HQ snapshots, targets, or other protected business data without separate explicit approval.
 8. Treat remote-network synchronization as a separate optional capability. If later enabled, it should use developer-managed Firebase/cloud infrastructure or another managed transport, never require the user to install a relay program.
 
-## Required Google Cloud/Firebase setup
+## Confirmed Google Cloud/Firebase setup
 
-The Android source already has Google Sign-In and Firebase Authentication. The inspected Windows source does not. Windows needs an OAuth client configured for a desktop/installed application (with PKCE/loopback redirect) and a corresponding Firebase Authentication sign-in exchange. The existing Android/Web OAuth client IDs must not be assumed to be interchangeable with a desktop OAuth client. Do not place a client secret in the desktop app or repository.
-
-Before the Windows sign-in implementation can be tested against the real project, confirm/create the desktop OAuth client ID in the existing Google Cloud project and verify that Google is enabled as a Firebase Authentication provider.
+- Firebase project: `fieldpulse-b3eb3` (project number `276884313547`).
+- Android package: `com.aziitech.simregmonitor`.
+- Google is enabled as a Firebase Authentication provider (confirmed by the user).
+- Android v340 includes Google Sign-In and Firebase Auth dependencies and signs in using a Google ID token exchanged through Firebase Auth. The Android Firebase UID is therefore available from `FirebaseAuth.currentUser.uid` after successful sign-in.
+- User-provided Windows Desktop OAuth Client ID: `276884313547-u2f38f1i8veta36acrp7rfviv7ibldoe.apps.googleusercontent.com`.
+- Windows must use the desktop client with Authorization Code + PKCE (loopback redirect) and exchange the Google credential with the same Firebase project. Do not embed a client secret. Do not use the Android OAuth client or Web client as a substitute for the desktop client.
+- Google Drive OAuth remains a separate authorization flow for Drive backup. Do not reuse its access token as the Firebase identity or as a pairing secret.
 
 ## Safety and regression boundaries
 
@@ -60,6 +64,13 @@ Before the Windows sign-in implementation can be tested against the real project
 - Preserve AES-GCM confidentiality and validate peer identity before accepting sync payloads.
 - Do not mark sync complete until LAN discovery, first pairing, two-way transfer, offline/reconnect, Windows sleep/resume, duplicate suppression, conflict handling, and deletion behavior are tested on real devices.
 - Source inspection and a successful compile are not proof of runtime device-to-device behavior.
+
+## Current baseline audit (2026-11-07)
+
+- Android v340 source artifact from successful GitHub Actions run `42391551935` was inspected. It contains the existing Google-to-Firebase sign-in path and the current encrypted LAN bridge client.
+- PC v340 source ZIP in the user's Library was inspected. It contains the WPF LAN bridge and UDP discovery responder, but no Firebase/Auth dependency or Windows Google sign-in implementation.
+- The trial branch's tracked ZIP baselines are older (Android v337 and PC v328). The PC v340 Library package and Android v340 successful-build artifact must be brought into the trial branch before implementation/build validation; do not silently build the new work against the older ZIPs.
+- The Windows Desktop OAuth client ID and Firebase Google provider are now confirmed, so the remaining account-auth task is implementation rather than asking the user to create another OAuth client.
 
 ## First trial change
 
