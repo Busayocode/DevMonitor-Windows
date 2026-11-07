@@ -1,0 +1,32 @@
+name: Inspect DevMonitor Card Rendering Sources
+on:
+  push:
+    branches: [trial/original-card-clear-legibility]
+    paths: [.github/workflows/inspect-card-rendering.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract original and trial renderers
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP="$(find . -maxdepth 1 -type f -name 'DevMonitor-An-v337-*.zip' | head -n 1)"
+          test -n "$ZIP"
+          mkdir -p inspect/original inspect/trial
+          unzip -q "$ZIP" -d inspect/original
+          python3 trial-overrides/apply_patch.py trial-overrides/android.patch.gz inspect/trial
+          cp inspect/original/app/src/main/java/com/aziitech/simregmonitor/ReportExportPack.kt inspect/original-ReportExportPack.kt
+          cp inspect/trial/app/src/main/java/com/aziitech/simregmonitor/ReportExportPack.kt inspect/trial-ReportExportPack.kt
+          diff -u inspect/original-ReportExportPack.kt inspect/trial-ReportExportPack.kt > inspect/ReportExportPack.diff || true
+          cp trial-overrides/android.patch.gz inspect/android.patch.gz
+          cd inspect
+          zip -qr ../DevMonitor-Card-Rendering-Inspection.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Card-Rendering-Inspection
+          path: DevMonitor-Card-Rendering-Inspection.zip
+          retention-days: 7
