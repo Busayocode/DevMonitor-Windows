@@ -116,3 +116,10 @@ This register is a coordination mechanism, not an automated source-code diff ser
 
 Do not mark cross-platform parity complete until Windows capability is checked and any applicable implementation is built and tested. Payment/MOM calculations and SMS query behavior remain protected.
 
+
+## Merge safeguard — main branch SMS Checker v338
+
+The user has confirmed that main has independently gained additional SMS Checker features and is now at version 338. The History daily-history trial is also labelled v338 but was built from the older v337 baseline. These are divergent source lines with coincidentally matching version numbers.
+
+Do not merge History wholesale or replace main's ZIP. Before integration, compare the latest main source against the History patch, preserve all newer main SMS Checker behaviour, selectively port only the daily-history changes, resolve overlapping code manually, and test both old and new checker flows. The integrated build must receive a version number higher than the actual latest main version. Keep the trial isolated until explicit user approval.
+
