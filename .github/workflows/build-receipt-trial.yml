@@ -1,0 +1,97 @@
+name: DevMonitor Receipt Share Card Trial
+
+on:
+  push:
+    branches:
+      - trial/receipt-style-share-cards
+    paths:
+      - 'trial-overrides/**'
+      - '.github/workflows/build-receipt-trial.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-android-trial:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trial branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Extract and apply Android receipt-card trial
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP_FILE="$(find . -maxdepth 1 -type f -name 'DevMonitor-An-v337-*.zip' | head -n 1)"
+          [ -n "$ZIP_FILE" ] || { echo "Android v337 baseline ZIP not found."; exit 1; }
+          rm -rf build-android
+          mkdir -p build-android
+          unzip -q "$ZIP_FILE" -d build-android
+          python3 trial-overrides/apply_patch.py trial-overrides/android.patch.gz build-android
+          grep -q 'versionCode = 338' build-android/app/build.gradle.kts
+          grep -q 'fun sharePaymentCardPdfAsync' build-android/app/src/main/java/com/aziitech/simregmonitor/ReportExportPack.kt
+          chmod +x build-android/gradlew
+
+      - name: Build Android debug trial APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd build-android
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Upload Android trial APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Android-Receipt-Card-Trial-v338
+          path: build-android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  build-windows-trial:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout trial branch
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Extract and apply Windows receipt-card trial
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem -Path . -File -Filter 'DevMonitor-PC-v328-*.zip' | Select-Object -First 1
+          if (-not $zip) { throw 'Windows v328 baseline ZIP not found.' }
+          if (Test-Path .\build-windows) { Remove-Item .\build-windows -Recurse -Force }
+          New-Item -ItemType Directory -Path .\build-windows | Out-Null
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath .\build-windows -Force
+          python trial-overrides\apply_patch.py trial-overrides\windows.patch.gz build-windows
+          if ($LASTEXITCODE -ne 0) { throw 'Could not apply Windows trial patch.' }
+          if (-not (Select-String -Path .\build-windows\DevMonitor.Windows.csproj -Pattern '<Version>4.7.0.329</Version>')) {
+            throw 'Windows trial version metadata was not applied.'
+          }
+
+      - name: Build Windows trial
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish .\build-windows\DevMonitor.Windows.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o .\build-windows\publish
+          if ($LASTEXITCODE -ne 0) { throw "Windows trial publish failed: $LASTEXITCODE" }
+          if (-not (Test-Path .\build-windows\publish\DevMonitor.exe)) { throw 'DevMonitor.exe was not produced.' }
+
+      - name: Upload Windows trial application
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Windows-Receipt-Card-Trial-v329
+          path: build-windows/publish/**
+          if-no-files-found: error
+          retention-days: 30
