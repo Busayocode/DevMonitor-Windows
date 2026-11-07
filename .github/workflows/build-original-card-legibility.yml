@@ -46,19 +46,16 @@ jobs:
               s = s.replace(old_sig, new_sig, 1)
           s = s.replace("drawPaymentCard(canvas, d, outputScale)", "drawPaymentCard(context, canvas, d, outputScale)")
           s = s.replace("drawPaymentCard(page.canvas, d, pageWidth.toFloat() / 1080f)", "drawPaymentCard(context, page.canvas, d, pageWidth.toFloat() / 1080f)")
-          stale = """        FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                  bitmap.recycle()
-                  return file
-              }
-
-              private fun drawWrapped"""
-          if stale in s:
-              s = s.replace(stale, "    private fun drawWrapped", 1)
-          if "private fun drawPaymentCard(context: Context, canvas: Canvas" not in s:
-              raise SystemExit("Could not correct drawPaymentCard context parameter")
-          if "drawPaymentCard(context, page.canvas" not in s:
-              raise SystemExit("PDF renderer was not updated to pass Context")
-          if "bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }\n        bitmap.recycle()\n        return file\n    }\n\n    private fun drawWrapped" in s:
+          import re
+          s, count = re.subn(
+              r"\\n[ \\t]*FileOutputStream\\(file\\)\\.use \\{ bitmap\\.compress\\(Bitmap\\.CompressFormat\\.PNG, 100, it\\) \\}\\n[ \\t]*bitmap\\.recycle\\(\\)\\n[ \\t]*return file\\n[ \\t]*\\}\\n\\n[ \\t]*private fun drawWrapped",
+              "\\n    private fun drawWrapped",
+              s,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("Expected to remove exactly one orphaned PNG-writer tail; removed " + str(count))
+          if "bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }\\n        bitmap.recycle()\\n        return file\\n    }\\n\\n    private fun drawWrapped" in s:
               raise SystemExit("Stale duplicate PNG writer remains")
           p.write_text(s)
           PY
