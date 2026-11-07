@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 <<'PY'
-          import os, re, subprocess, zipfile
+          import io, os, re, subprocess, zipfile
           from pathlib import Path
 
           event = os.environ.get("GITHUB_EVENT_NAME", "")
@@ -82,6 +82,19 @@ jobs:
                           for name in archive.namelist()
                           if not name.endswith("/")
                       }
+                      # The Android v340 upload is an outer ZIP containing the
+                      # actual source ZIP. Inspect one nested level for project markers.
+                      for member in archive.namelist():
+                          if member.lower().endswith(".zip"):
+                              try:
+                                  with zipfile.ZipFile(io.BytesIO(archive.read(member))) as nested:
+                                      names.update(
+                                          name.replace("\\", "/").lower().lstrip("./")
+                                          for name in nested.namelist()
+                                          if not name.endswith("/")
+                                      )
+                              except (OSError, zipfile.BadZipFile):
+                                  print(f"Skipping unreadable nested ZIP {member} inside {path}")
               except (OSError, zipfile.BadZipFile) as exc:
                   print(f"Skipping invalid ZIP {path}: {exc}")
                   return
@@ -192,6 +205,16 @@ jobs:
           rm -rf build-source
           mkdir -p build-source
           unzip -q "$ZIP_FILE" -d build-source
+
+      - name: Extract nested source archive when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' nested_zip; do
+            echo "Extracting nested source archive: $nested_zip"
+            mkdir -p build-source/nested-source
+            unzip -q "$nested_zip" -d build-source/nested-source
+          done < <(find build-source -maxdepth 2 -type f -name '*.zip' -print0)
 
       - name: Locate Android project
         shell: bash
