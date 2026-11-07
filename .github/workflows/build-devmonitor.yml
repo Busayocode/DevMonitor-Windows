@@ -379,14 +379,14 @@ jobs:
               [apksigner, "verify", "--verbose", "--print-certs", apk],
               text=True, capture_output=True
           )
-          output = (result.stdout or "") + "\\n" + (result.stderr or "")
+          output = (result.stdout or "") + "\n" + (result.stderr or "")
           if result.returncode != 0:
               print("ERROR: apksigner verification command failed.")
               print(output.strip())
               raise SystemExit(result.returncode)
 
           match = re.search(
-              r"certificate\\s+SHA-1\\s+digest\\s*:\\s*([0-9a-fA-F:]+)",
+              r"certificate\s+SHA-1\s+digest\s*:\s*([0-9a-fA-F:]+)",
               output,
               re.IGNORECASE
           )
