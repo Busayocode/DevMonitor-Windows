@@ -34,6 +34,34 @@ jobs:
           echo "Patch bytes: $(wc -c < /tmp/original-card.patch)"
           git apply --directory=build-android --check /tmp/original-card.patch
           git apply --directory=build-android /tmp/original-card.patch
+          # Correct the extracted refactor's Canvas context and remove a stale duplicate
+          # PNG-writer tail that was left after moving the drawing routine.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("build-android/app/src/main/java/com/aziitech/simregmonitor/ReportExportPack.kt")
+          s = p.read_text()
+          old_sig = "private fun drawPaymentCard(canvas: Canvas, d: PaymentCardSharePayload, outputScale: Float)"
+          new_sig = "private fun drawPaymentCard(context: Context, canvas: Canvas, d: PaymentCardSharePayload, outputScale: Float)"
+          if old_sig in s:
+              s = s.replace(old_sig, new_sig, 1)
+          s = s.replace("drawPaymentCard(canvas, d, outputScale)", "drawPaymentCard(context, canvas, d, outputScale)")
+          s = s.replace("drawPaymentCard(page.canvas, d, pageWidth.toFloat() / 1080f)", "drawPaymentCard(context, page.canvas, d, pageWidth.toFloat() / 1080f)")
+          stale = """        FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                  bitmap.recycle()
+                  return file
+              }
+
+              private fun drawWrapped"""
+          if stale in s:
+              s = s.replace(stale, "    private fun drawWrapped", 1)
+          if "private fun drawPaymentCard(context: Context, canvas: Canvas" not in s:
+              raise SystemExit("Could not correct drawPaymentCard context parameter")
+          if "drawPaymentCard(context, page.canvas" not in s:
+              raise SystemExit("PDF renderer was not updated to pass Context")
+          if "bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }\n        bitmap.recycle()\n        return file\n    }\n\n    private fun drawWrapped" in s:
+              raise SystemExit("Stale duplicate PNG writer remains")
+          p.write_text(s)
+          PY
           grep -n 'versionCode\|versionName' build-android/app/build.gradle.kts
           grep -n 'sharePaymentCardPdfAsync' build-android/app/src/main/java/com/aziitech/simregmonitor/ReportExportPack.kt
           grep -n 'Share this card as PDF' build-android/app/src/main/java/com/aziitech/simregmonitor/ManagementScreens.kt
