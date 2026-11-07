@@ -76,11 +76,17 @@ jobs:
           for line in lines:
               if line.startswith("diff --git "):
                   skip = line.startswith("diff --git a/app/build.gradle.kts ")
+              elif line.startswith("Index: "):
+                  skip = line[7:].strip().endswith("app/build.gradle.kts")
+              elif line.startswith("--- "):
+                  path = line[4:].split("\t", 1)[0].strip()
+                  if path != "/dev/null":
+                      skip = path.endswith("app/build.gradle.kts")
               if not skip:
                   out.append(line)
           Path("/tmp/android-history.patch").write_text("".join(out))
           PY
-          patch --batch --forward --exclude=app/build.gradle.kts -p1 -d build-android < /tmp/android-history.patch
+          patch --batch --forward -p1 -d build-android < /tmp/android-history.patch
           echo 'History source changes applied; its old Gradle version hunk was intentionally excluded so v340 metadata can be set independently.'
       - name: Reapply v339 SMS Checker ordering, Recheck priority and partner timeout
         shell: bash
