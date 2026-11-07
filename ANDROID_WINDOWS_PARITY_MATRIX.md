@@ -101,3 +101,18 @@ For every new Android or Windows source package, complete the following before c
 ## Release note
 
 This register is a coordination mechanism, not an automated source-code diff service. Each package must be inspected and the register updated. If repository automation is added later, it should produce a report for review rather than silently asserting functional parity from filenames or matching file names alone.
+
+
+## Android v338 — SMS Checker daily history
+
+| Capability | Android v338 | Windows/PC | Status |
+|---|---|---|---|
+| Separate Device Monitor daily history database | `sms_checker_devices_history.db` | Not assessed in this increment | Android source added; build/device test pending |
+| Separate My Partners daily history database | `sms_checker_partners_history.db` | Not assessed in this increment | Android source added; build/device test pending |
+| Current + previous calendar month retention | Implemented in Android history store | Not assessed | Android source added; test month rollover |
+| Whole-day report and per-code history | Date selection shows latest daily result per code; per-code view retains all completed rechecks | Not assessed | Android source added; UI/device test pending |
+| Legacy history migration | Imports existing successful/not-found entries once per menu | Not assessed | Limited to records already present in legacy history |
+| Cloud backup of history DBs | Not included in existing single-database Drive backup | Not assessed | Separate follow-up |
+
+Do not mark cross-platform parity complete until Windows capability is checked and any applicable implementation is built and tested. Payment/MOM calculations and SMS query behavior remain protected.
+
