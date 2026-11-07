@@ -46,7 +46,9 @@ jobs:
                   if x.lower().endswith(".zip")
               ]
 
-          if not candidates:
+          # A normal push builds only ZIPs changed by that push.
+          # A manual dispatch intentionally selects from all tracked ZIPs.
+          if event == "workflow_dispatch":
               result = subprocess.run(
                   ["git", "ls-files", "-z", "*.zip"],
                   check=True, capture_output=True
@@ -123,17 +125,6 @@ jobs:
           for candidate in candidates:
               scan(candidate)
 
-          # If a push did not contain a recognised source ZIP,
-          # inspect all tracked ZIPs before failing.
-          if event == "push" and not android and not windows:
-              result = subprocess.run(
-                  ["git", "ls-files", "-z", "*.zip"],
-                  check=True, capture_output=True
-              )
-              for raw in result.stdout.split(b"\0"):
-                  if raw:
-                      scan(Path(raw.decode()))
-
           android_zip = (
               str(sorted(set(android), key=natural_key)[-1])
               if android else ""
@@ -143,12 +134,14 @@ jobs:
               if windows else ""
           )
 
-          if not android_zip and not windows_zip:
+          if candidates and not android_zip and not windows_zip:
               raise SystemExit(
-                  "No valid Android or Windows source ZIP was found. "
-                  "Ensure a source ZIP is committed to the repository "
-                  "and contains its project files."
+                  "The changed/selected ZIP files did not contain a recognised "
+                  "DevMonitor Android or Windows project. No build was started."
               )
+
+          if not candidates:
+              print("No source ZIP was uploaded or selected; both app builds will be skipped.")
 
           print(f"Selected Android ZIP: {android_zip or '(none)'}")
           print(f"Selected Windows ZIP: {windows_zip or '(none)'}")
