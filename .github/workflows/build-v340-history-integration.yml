@@ -80,7 +80,7 @@ jobs:
                   out.append(line)
           Path("/tmp/android-history.patch").write_text("".join(out))
           PY
-          patch --batch --forward -p1 -d build-android < /tmp/android-history.patch
+          patch --batch --forward --exclude=app/build.gradle.kts -p1 -d build-android < /tmp/android-history.patch
           echo 'History source changes applied; its old Gradle version hunk was intentionally excluded so v340 metadata can be set independently.'
       - name: Reapply v339 SMS Checker ordering, Recheck priority and partner timeout
         shell: bash
