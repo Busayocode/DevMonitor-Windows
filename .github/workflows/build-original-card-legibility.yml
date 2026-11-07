@@ -21,18 +21,22 @@ jobs:
       - name: Extract v337 Recheck baseline and apply original-card enhancement
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           ZIP_FILE="$(find . -maxdepth 1 -type f -name 'DevMonitor-An-v337-*.zip' | head -n 1)"
           [ -n "$ZIP_FILE" ] || { echo "Android v337 Recheck baseline ZIP not found."; exit 1; }
+          echo "Using baseline: $ZIP_FILE"
           rm -rf build-android
           mkdir -p build-android
           unzip -q "$ZIP_FILE" -d build-android
           base64 -d hybrid-overrides/android-original-card.patch.gz.b64 > /tmp/original-card.patch.gz
+          gzip -t /tmp/original-card.patch.gz
           python3 -c "import gzip,sys; sys.stdout.buffer.write(gzip.decompress(open('/tmp/original-card.patch.gz','rb').read()))" > /tmp/original-card.patch
+          echo "Patch bytes: $(wc -c < /tmp/original-card.patch)"
+          git -C build-android apply --check /tmp/original-card.patch
           git -C build-android apply /tmp/original-card.patch
-          grep -q 'versionCode = 339' build-android/app/build.gradle.kts
-          grep -q 'fun sharePaymentCardPdfAsync' build-android/app/src/main/java/com/aziitech/simregmonitor/ReportExportPack.kt
-          grep -q 'Share this card as PDF' build-android/app/src/main/java/com/aziitech/simregmonitor/ManagementScreens.kt
+          grep -n 'versionCode\|versionName' build-android/app/build.gradle.kts
+          grep -n 'sharePaymentCardPdfAsync' build-android/app/src/main/java/com/aziitech/simregmonitor/ReportExportPack.kt
+          grep -n 'Share this card as PDF' build-android/app/src/main/java/com/aziitech/simregmonitor/ManagementScreens.kt
           chmod +x build-android/gradlew
       - name: Build Android debug APK
         shell: bash
