@@ -48,14 +48,14 @@ jobs:
           s = s.replace("drawPaymentCard(page.canvas, d, pageWidth.toFloat() / 1080f)", "drawPaymentCard(context, page.canvas, d, pageWidth.toFloat() / 1080f)")
           import re
           s, count = re.subn(
-              r"\\n[ \\t]*FileOutputStream\\(file\\)\\.use \\{ bitmap\\.compress\\(Bitmap\\.CompressFormat\\.PNG, 100, it\\) \\}\\n[ \\t]*bitmap\\.recycle\\(\\)\\n[ \\t]*return file\\n[ \\t]*\\}\\n\\n[ \\t]*private fun drawWrapped",
-              "\\n    private fun drawWrapped",
+              r"\n[ \t]*FileOutputStream\(file\)\.use \{ bitmap\.compress\(Bitmap\.CompressFormat\.PNG, 100, it\) \}\n[ \t]*bitmap\.recycle\(\)\n[ \t]*return file\n[ \t]*\}\n\n[ \t]*private fun drawWrapped",
+              "\n    private fun drawWrapped",
               s,
               count=1,
           )
           if count != 1:
               raise SystemExit("Expected to remove exactly one orphaned PNG-writer tail; removed " + str(count))
-          if "bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }\\n        bitmap.recycle()\\n        return file\\n    }\\n\\n    private fun drawWrapped" in s:
+          if "bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }\n        bitmap.recycle()\n        return file\n    }\n\n    private fun drawWrapped" in s:
               raise SystemExit("Stale duplicate PNG writer remains")
           p.write_text(s)
           PY
