@@ -85,12 +85,13 @@ fun SmsCheckerHistoryDialog(store: SmsCheckerDailyHistoryStore, title: String, i
                 } else {
                     LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         items(visible, key = { it.code }) { row ->
-                            val result = row.latest.record.result
-                            val checked = SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()).format(Date(row.latest.completedAt))
+                            val displayEvent = if (dateFilter == "All dates") row.latest else row.byDate[dateFilter] ?: row.latest
+                            val result = displayEvent.record.result
+                            val checked = SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()).format(Date(displayEvent.completedAt))
                             Card(Modifier.fillMaxWidth()) {
                                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(7.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     SmsReportCell(row.code, widths[0], bold = true)
-                                    SmsReportCell(row.latest.record.status.name.replace('_', ' '), widths[1])
+                                    SmsReportCell(displayEvent.record.status.name.replace('_', ' '), widths[1])
                                     SmsReportCell(result?.mtd?.toString() ?: "—", widths[2])
                                     SmsReportCell(result?.active?.toString() ?: "—", widths[3])
                                     SmsReportCell(result?.bar48?.toString() ?: "—", widths[4])
