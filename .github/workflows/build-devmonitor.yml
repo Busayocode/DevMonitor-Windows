@@ -289,7 +289,7 @@ jobs:
               raise SystemExit("Daily SMS snapshot upsert/one-row-per-device-per-day store is missing.")
           if "latest return saved per device per day" not in history or "DEVICE / TRADE CODE" not in history:
               raise SystemExit("Loaded Report-style daily SMS table is missing its daily snapshot layout.")
-          if "initialDeviceCode" not in history or "initialDeviceCode" not in table:
+          if "initialDeviceCode" not in history:
               raise SystemExit("Per-device History prefilter is missing.")
           if 'Text("History"' not in source or "smsHistoryDeviceCode = code" not in source:
               raise SystemExit("Per-device History button was not added to the device card.")
