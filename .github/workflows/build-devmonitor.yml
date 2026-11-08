@@ -239,9 +239,10 @@ jobs:
           [ -f "$TARGET" ] || { echo "ERROR: SMS Checker history source file not found in Android ZIP."; exit 1; }
           cp "$OVERLAY" "$TARGET"
           PKG="$PROJECT_DIR/app/src/main/java/com/aziitech/simregmonitor"
-          cp "trial-overlays/android/app/src/main/java/com/aziitech/simregmonitor/SmsCheckerDailyHistoryStore.kt" "$PKG/SmsCheckerDailyHistoryStore.kt"
-          cp "trial-overlays/android/app/src/main/java/com/aziitech/simregmonitor/SmsCheckerDailyReportTable.kt" "$PKG/SmsCheckerDailyReportTable.kt"
-          echo "Applied the daily SMS snapshot store and Loaded Report-style table."
+          STORE="$PKG/SmsCheckerDailyHistoryStore.kt"
+          [ -f "$STORE" ] || { echo "ERROR: SMS Checker history store is missing from the Android source ZIP."; exit 1; }
+          (cd "$PKG" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/make_sms_daily_snapshots.py")
+          echo "Applied one-latest-result-per-device-per-day persistence and daily report table."
           MAIN="$PROJECT_DIR/app/src/main/java/com/aziitech/simregmonitor/MainActivity.kt"
           PATCH="trial-overlays/android/scripts/compact_sms_checker.py"
           [ -f "$MAIN" ] && [ -f "$PATCH" ] || { echo "ERROR: SMS Checker compact-layout patch inputs are missing."; exit 1; }
