@@ -47,8 +47,13 @@ if old_bottom not in s:
     raise SystemExit("SMS history page invocation not found.")
 s = s.replace(old_bottom, new_bottom, 1)
 
-# The global history control always opens the all-date view.
-s = s.replace('onClick = { showSmsHistory = true }, enabled = !running, modifier = Modifier.weight(1f)', 'onClick = { smsHistoryDeviceCode = null; showSmsHistory = true }, enabled = !running, modifier = Modifier.weight(1f)', 1)
+# Every bottom/global History entry point must open the unfiltered history table.
+# The device-card History action above is intentionally separate and preselects that device.
+global_history_click = 'onClick = { showSmsHistory = true }'
+global_history_count = s.count(global_history_click)
+if global_history_count < 1:
+    raise SystemExit("Bottom SMS Checker History button click handler was not found.")
+s = s.replace(global_history_click, 'onClick = { smsHistoryDeviceCode = null; showSmsHistory = true }')
 
 p.write_text(s, encoding="utf-8")
 print("Added per-device History action to the device card header and wired both history entry points.")
