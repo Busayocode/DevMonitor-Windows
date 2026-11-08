@@ -244,7 +244,12 @@ jobs:
           cp "$MAIN" MainActivity.kt
           python3 "$PATCH"
           cp MainActivity.kt "$MAIN"
-          echo "Applied compact SMS Checker controls and one-line utility labels."
+          ENTRY_PATCH="trial-overlays/android/scripts/sms_history_entrypoints.py"
+          [ -f "$ENTRY_PATCH" ] || { echo "ERROR: Per-device SMS history entry-point patch is missing."; exit 1; }
+          cp "$MAIN" MainActivity.kt
+          python3 "$ENTRY_PATCH"
+          cp MainActivity.kt "$MAIN"
+          echo "Applied compact SMS Checker controls and per-device history entry points."
 
       - name: Verify Android v340 source and trial UI overlay
         shell: bash
@@ -273,7 +278,11 @@ jobs:
               raise SystemExit("Android ZIP must already declare versionCode 340.")
           if "usePlatformDefaultWidth = false" not in history or "SMS Checker history" not in history:
               raise SystemExit("Full-screen SMS Checker History page overlay is not present.")
-          print("Android v340 source and full-screen SMS Checker History page overlay verified.")
+          if "initialDeviceCode" not in history or "SmsCheckerHistoryTableRow" not in history:
+              raise SystemExit("Searchable table history page or preselected device history is missing.")
+          if 'Text("History"' not in source or "smsHistoryDeviceCode = code" not in source:
+              raise SystemExit("Per-device History button was not added to the device card.")
+          print("Android v340 source, per-device history action and full-screen history table verified.")
           PY
 
       - name: Generate automated What's New release notes
