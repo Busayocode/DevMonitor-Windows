@@ -238,7 +238,10 @@ jobs:
           [ -f "$OVERLAY" ] || { echo "ERROR: Trial SMS History page overlay is missing."; exit 1; }
           [ -f "$TARGET" ] || { echo "ERROR: SMS Checker history source file not found in Android ZIP."; exit 1; }
           cp "$OVERLAY" "$TARGET"
-          echo "Applied full-screen SMS Checker History page overlay."
+          PKG="$PROJECT_DIR/app/src/main/java/com/aziitech/simregmonitor"
+          cp "trial-overlays/android/app/src/main/java/com/aziitech/simregmonitor/SmsCheckerDailyHistoryStore.kt" "$PKG/SmsCheckerDailyHistoryStore.kt"
+          cp "trial-overlays/android/app/src/main/java/com/aziitech/simregmonitor/SmsCheckerDailyReportTable.kt" "$PKG/SmsCheckerDailyReportTable.kt"
+          echo "Applied the daily SMS snapshot store and Loaded Report-style table."
           MAIN="$PROJECT_DIR/app/src/main/java/com/aziitech/simregmonitor/MainActivity.kt"
           PATCH="trial-overlays/android/scripts/compact_sms_checker.py"
           [ -f "$MAIN" ] && [ -f "$PATCH" ] || { echo "ERROR: SMS Checker compact-layout patch inputs are missing."; exit 1; }
@@ -263,24 +266,32 @@ jobs:
           mains = list(Path("build-source").rglob("MainActivity.kt"))
           builds = list(Path("build-source").rglob("app/build.gradle.kts"))
           histories = list(Path("build-source").rglob("SmsCheckerHistoryDialog.kt"))
-          if len(mains) != 1 or len(builds) != 1 or len(histories) != 1:
+          stores = list(Path("build-source").rglob("SmsCheckerDailyHistoryStore.kt"))
+          tables = list(Path("build-source").rglob("SmsCheckerDailyReportTable.kt"))
+          if len(mains) != 1 or len(builds) != 1 or len(histories) != 1 or len(stores) != 1 or len(tables) != 1:
               raise SystemExit(
-                  f"Expected one MainActivity.kt, app/build.gradle.kts and SmsCheckerHistoryDialog.kt; "
-                  f"found {len(mains)}, {len(builds)} and {len(histories)}."
+                  f"Expected one MainActivity.kt, app/build.gradle.kts, history dialog, daily store and daily table; "
+                  f"found {len(mains)}, {len(builds)}, {len(histories)}, {len(stores)} and {len(tables)}."
               )
           source = mains[0].read_text(encoding="utf-8")
           gradle = builds[0].read_text(encoding="utf-8")
           history = histories[0].read_text(encoding="utf-8")
+          store = stores[0].read_text(encoding="utf-8")
+          table = tables[0].read_text(encoding="utf-8")
           if "return@forEachIndexed" in source:
               raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
           if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
           if not re.search(r'versionCode\s*=\s*340', gradle):
               raise SystemExit("Android ZIP must already declare versionCode 340.")
-          if "usePlatformDefaultWidth = false" not in history or "SMS Checker history" not in history:
-              raise SystemExit("Full-screen SMS Checker History page overlay is not present.")
-          if "initialDeviceCode" not in history or "SmsCheckerHistoryTableRow" not in history:
-              raise SystemExit("Searchable table history page or preselected device history is missing.")
+          if "SmsCheckerDailyReportTable" not in history or "allDailySnapshots" not in history:
+              raise SystemExit("SMS History is not routed to the daily report table.")
+          if "DELETE FROM sms_checker_daily_results" not in store or "allDailySnapshots" not in store:
+              raise SystemExit("Daily SMS snapshot upsert/one-row-per-device-per-day store is missing.")
+          if "latest return saved per device per day" not in table or "DEVICE / TRADE CODE" not in table:
+              raise SystemExit("Loaded Report-style daily SMS table is missing its daily snapshot layout.")
+          if "initialDeviceCode" not in history or "initialDeviceCode" not in table:
+              raise SystemExit("Per-device History prefilter is missing.")
           if 'Text("History"' not in source or "smsHistoryDeviceCode = code" not in source:
               raise SystemExit("Per-device History button was not added to the device card.")
           print("Android v340 source, per-device history action and full-screen history table verified.")
