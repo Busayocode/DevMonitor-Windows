@@ -1,6 +1,8 @@
 package com.aziitech.simregmonitor
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -55,7 +57,10 @@ fun SmsCheckerHistoryDialog(
     val deviceEvents = remember(store, search) {
         if (search.isBlank()) emptyList() else store.recordsForCode(search.trim())
     }
-    val filtered = (if (deviceView) deviceEvents else dayEvents).filter { event ->
+    val baseEvents = if (deviceView) deviceEvents else dayEvents.groupBy { it.record.code }
+        .values.mapNotNull { it.maxByOrNull { event -> event.completedAt } }
+        .sortedByDescending { it.completedAt }
+    val visible = baseEvents.filter { event ->
         val matchesSearch = search.isBlank() || event.record.code.contains(search.trim(), true)
         val matchesStatus = when (statusFilter) {
             "Success" -> event.record.status == AttemptStatus.SUCCESS
@@ -66,9 +71,6 @@ fun SmsCheckerHistoryDialog(
         }
         matchesSearch && matchesStatus
     }
-    val visible = if (deviceView) filtered else filtered.groupBy { it.record.code }
-        .values.mapNotNull { it.maxByOrNull { event -> event.completedAt } }
-        .sortedByDescending { it.completedAt }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
