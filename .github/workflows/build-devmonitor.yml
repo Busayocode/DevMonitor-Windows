@@ -1,4 +1,4 @@
-# Trial build trigger: recompile after SMS history table width import correction.
+# Trial build trigger: use a daily SMS snapshot model and the Loaded Report-style table.
 name: Build DevMonitor Android and Windows
 
 on:
@@ -267,28 +267,26 @@ jobs:
           builds = list(Path("build-source").rglob("app/build.gradle.kts"))
           histories = list(Path("build-source").rglob("SmsCheckerHistoryDialog.kt"))
           stores = list(Path("build-source").rglob("SmsCheckerDailyHistoryStore.kt"))
-          tables = list(Path("build-source").rglob("SmsCheckerDailyReportTable.kt"))
-          if len(mains) != 1 or len(builds) != 1 or len(histories) != 1 or len(stores) != 1 or len(tables) != 1:
+          if len(mains) != 1 or len(builds) != 1 or len(histories) != 1 or len(stores) != 1:
               raise SystemExit(
-                  f"Expected one MainActivity.kt, app/build.gradle.kts, history dialog, daily store and daily table; "
-                  f"found {len(mains)}, {len(builds)}, {len(histories)}, {len(stores)} and {len(tables)}."
+                  f"Expected one MainActivity.kt, app/build.gradle.kts, history dialog and daily store; "
+                  f"found {len(mains)}, {len(builds)}, {len(histories)} and {len(stores)}."
               )
           source = mains[0].read_text(encoding="utf-8")
           gradle = builds[0].read_text(encoding="utf-8")
           history = histories[0].read_text(encoding="utf-8")
           store = stores[0].read_text(encoding="utf-8")
-          table = tables[0].read_text(encoding="utf-8")
           if "return@forEachIndexed" in source:
               raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
           if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
           if not re.search(r'versionCode\s*=\s*340', gradle):
               raise SystemExit("Android ZIP must already declare versionCode 340.")
-          if "SmsCheckerDailyReportTable" not in history or "allDailySnapshots" not in history:
-              raise SystemExit("SMS History is not routed to the daily report table.")
-          if "DELETE FROM sms_checker_daily_results" not in store or "allDailySnapshots" not in store:
+          if "allDailySnapshots" not in history or "SmsReportCell" not in history:
+              raise SystemExit("SMS History is not routed to the daily report-style table.")
+          if "DELETE FROM sms_checker_daily_results" not in store or "allDailySnapshots" not in store or "idx_sms_history_one_daily_result" not in store:
               raise SystemExit("Daily SMS snapshot upsert/one-row-per-device-per-day store is missing.")
-          if "latest return saved per device per day" not in table or "DEVICE / TRADE CODE" not in table:
+          if "latest return saved per device per day" not in history or "DEVICE / TRADE CODE" not in history:
               raise SystemExit("Loaded Report-style daily SMS table is missing its daily snapshot layout.")
           if "initialDeviceCode" not in history or "initialDeviceCode" not in table:
               raise SystemExit("Per-device History prefilter is missing.")
