@@ -106,11 +106,20 @@ fun SmsCheckerHistoryDialog(
                         FilterChip(selected = statusFilter == filter, onClick = { statusFilter = filter }, label = { Text(filter, style = MaterialTheme.typography.labelSmall) })
                     }
                 }
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))) {
-                    Row(Modifier.fillMaxWidth().padding(9.dp)) {
-                        Text("DEVICE / CODE", Modifier.weight(1.35f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
-                        Text("TIME", Modifier.weight(0.8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
-                        Text("RESULT", Modifier.weight(0.9f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 9.dp, vertical = 11.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("DATE", Modifier.width(94.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
+                        Text("DEVICE / TRADE CODE", Modifier.width(170.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
+                        Text("ATTEMPT", Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
+                        Text("STATUS", Modifier.width(112.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
+                        Text("TODAY", Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
+                        Text("MTD", Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
+                        Text("ACTIVE", Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
+                        Text("BAR 48", Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
+                        Text("BAR 96", Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
                     }
                 }
                 if (visible.isEmpty()) {
@@ -145,24 +154,44 @@ fun SmsCheckerHistoryDialog(
 private fun SmsCheckerHistoryTableRow(event: SmsCheckerHistoryEvent, expanded: Boolean, onClick: () -> Unit) {
     val record = event.record
     val result = record.result
-    val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(event.completedAt))
-    Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = if (expanded) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(horizontal = 9.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1.35f)) {
-                    Text(record.code, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                    Text(event.activityDate, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Text(time, Modifier.weight(0.8f), style = MaterialTheme.typography.labelSmall)
-                Text(record.status.name.replace('_', ' '), Modifier.weight(0.9f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+    val dateTime = SimpleDateFormat("dd MMM • HH:mm:ss", Locale.getDefault()).format(Date(event.completedAt))
+    val metric = { value: Any? -> value?.toString() ?: "—" }
+    Card(
+        Modifier.fillMaxWidth().clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = if (expanded) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
+            else MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(Modifier.padding(horizontal = 9.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(dateTime, Modifier.width(94.dp), style = MaterialTheme.typography.labelSmall)
+                Text(record.code, Modifier.width(170.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, maxLines = 2)
+                Text(record.attempt.toString(), Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall)
+                Text(record.status.name.replace('_', ' '), Modifier.width(112.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Text(metric(result?.today), Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall)
+                Text(metric(result?.mtd), Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall)
+                Text(metric(result?.active), Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall)
+                Text(metric(result?.bar48), Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall)
+                Text(metric(result?.bar96), Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall)
             }
             if (expanded) {
-                Text("Attempt ${record.attempt} • Sent ${record.repetitionsSent} time(s)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                if (result != null) Text(
-                    listOfNotNull(result.today?.let { "Today $it" }, result.mtd?.let { "MTD $it" }, result.active?.let { "Active $it" }, result.bar48?.let { "B48 $it" }, result.bar96?.let { "B96 $it" }, result.duplicates?.let { "Duplicates $it" }, result.monthlyTarget?.let { "Target $it" }).joinToString(" • "),
-                    style = MaterialTheme.typography.bodySmall
-                )
-                record.error?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                Text("Attempt ${record.attempt} • Sent ${record.repetitionsSent} time(s) • ${event.activityDate}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                if (result != null) {
+                    Text(
+                        listOfNotNull(
+                            result.duplicates?.let { "Duplicates $it" },
+                            result.monthlyTarget?.let { "Target $it" }
+                        ).joinToString(" • ").ifBlank { "No additional response details were saved." },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                record.error?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
                 Text("Tap to collapse", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             }
         }
