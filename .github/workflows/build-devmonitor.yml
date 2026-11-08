@@ -1,3 +1,4 @@
+# Trial build trigger: recompile after SMS history Compose import correction.
 name: Build DevMonitor Android and Windows
 
 on:
