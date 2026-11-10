@@ -262,10 +262,17 @@ jobs:
           cp "$MAIN" MainActivity.kt
           python3 "$CONVERSION_PATCH"
           cp MainActivity.kt "$MAIN"
-          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_342.py")
-          echo "Applied SMS history, current-month MOM Conversion and Android v342 version bump."
+          DRIVE_PATCH="trial-overlays/android/scripts/fix_google_drive_integrations.py"
+          [ -f "$DRIVE_PATCH" ] || { echo "ERROR: Google Drive integration patch is missing."; exit 1; }
+          cp "$MAIN" MainActivity.kt
+          cp "$PKG/OnlineReports.kt" OnlineReports.kt
+          python3 "$DRIVE_PATCH"
+          cp MainActivity.kt "$MAIN"
+          cp OnlineReports.kt "$PKG/OnlineReports.kt"
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_343.py")
+          echo "Applied SMS history, MOM Conversion, Google Drive authorization fixes and Android v343 version bump."
 
-      - name: Verify Android v342 source, SMS history and MOM Conversion
+      - name: Verify Android v343 source, SMS history, MOM Conversion and Google Drive fixes
         shell: bash
         run: |
           set -euo pipefail
@@ -290,8 +297,8 @@ jobs:
               raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
           if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
-          if not re.search(r'versionCode\s*=\s*342', gradle):
-              raise SystemExit("Android build must declare versionCode 342 after the trial version overlay.")
+          if not re.search(r'versionCode\s*=\s*343', gradle):
+              raise SystemExit("Android build must declare versionCode 343 after the trial version overlay.")
           if "allDailySnapshots" not in history or "SmsReportCell" not in history:
               raise SystemExit("SMS History is not routed to the daily report-style table.")
           if "DELETE FROM sms_checker_daily_results" not in store or "allDailySnapshots" not in store or "idx_sms_history_one_daily_result" not in store:
@@ -311,7 +318,19 @@ jobs:
               raise SystemExit("Current-month SMS Conversion calculator is missing from MOM.")
           if "CONVERSION • THIS MONTH" not in source or "active * 100.0 / mtd" not in conversion[0].read_text(encoding="utf-8"):
               raise SystemExit("MOM Conversion display or Active/MTD percentage formula is missing.")
-          print("Android v342 version, SMS History routes and current-month MOM Conversion verified.")
+          online = list(Path("build-source").rglob("OnlineReports.kt"))
+          if len(online) != 1:
+              raise SystemExit("Expected exactly one OnlineReports.kt source file.")
+          online_text = online[0].read_text(encoding="utf-8")
+          if online_text.count("androidKeyIdentityHeaders(context).forEach") != 2 or "OnlineReportStore.listReports(context)" not in online_text:
+              raise SystemExit("Online Reports requests are missing Android package/certificate identity headers.")
+          if "GoogleSignIn.getLastSignedInAccount(this@MainActivity)" in source:
+              raise SystemExit("A stale GoogleSignIn cached-account gate remains on cloud backup/restore.")
+          if source.count("FirebaseAuth.getInstance().currentUser == null") < 4:
+              raise SystemExit("Cloud backup/restore is not consistently gated by persistent Firebase account state.")
+          if "Scopes.DRIVE_APPFOLDER" not in source:
+              raise SystemExit("Google Drive appDataFolder authorization scope is missing.")
+          print("Android v343 version, SMS History, MOM Conversion, Online Reports API-key identity and Drive backup auth gates verified.")
           PY
 
       - name: Generate automated What's New release notes
