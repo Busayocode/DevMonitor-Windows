@@ -55,5 +55,16 @@ if global_history_count < 1:
     raise SystemExit("Bottom SMS Checker History button click handler was not found.")
 s = s.replace(global_history_click, 'onClick = { smsHistoryDeviceCode = null; showSmsHistory = true }')
 
+# The separate Device Monitor screen still had a legacy History action
+# opening the compact AlertDialog (the one that says "No completed results yet").
+legacy_device_history = 'DevMonitorOutlinedButton(onClick = { showHistory = true }, modifier = Modifier.weight(1f)) { Text("History") }'
+if legacy_device_history not in s:
+    raise SystemExit("Legacy Device Monitor History button was not found; refusing to leave the old popup route active.")
+s = s.replace(
+    legacy_device_history,
+    'DevMonitorOutlinedButton(onClick = { smsHistoryDeviceCode = null; showSmsHistory = true }, modifier = Modifier.weight(1f)) { Text("History") }',
+    1
+)
+
 p.write_text(s, encoding="utf-8")
 print("Added per-device History action to the device card header and wired both history entry points.")
