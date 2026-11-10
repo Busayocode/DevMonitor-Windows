@@ -254,9 +254,10 @@ jobs:
           cp "$MAIN" MainActivity.kt
           python3 "$ENTRY_PATCH"
           cp MainActivity.kt "$MAIN"
-          echo "Applied compact SMS Checker controls and per-device history entry points."
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_341.py")
+          echo "Applied compact SMS Checker controls, full-screen history entry points and Android v341 version bump."
 
-      - name: Verify Android v340 source and trial UI overlay
+      - name: Verify Android v341 source and full-screen history routing
         shell: bash
         run: |
           set -euo pipefail
@@ -281,8 +282,8 @@ jobs:
               raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
           if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
-          if not re.search(r'versionCode\s*=\s*340', gradle):
-              raise SystemExit("Android ZIP must already declare versionCode 340.")
+          if not re.search(r'versionCode\s*=\s*341', gradle):
+              raise SystemExit("Android build must declare versionCode 341 after the trial version overlay.")
           if "allDailySnapshots" not in history or "SmsReportCell" not in history:
               raise SystemExit("SMS History is not routed to the daily report-style table.")
           if "DELETE FROM sms_checker_daily_results" not in store or "allDailySnapshots" not in store or "idx_sms_history_one_daily_result" not in store:
@@ -293,7 +294,11 @@ jobs:
               raise SystemExit("Per-device History prefilter is missing.")
           if 'Text("History"' not in source or "smsHistoryDeviceCode = code" not in source:
               raise SystemExit("Per-device History button was not added to the device card.")
-          print("Android v340 source, per-device history action and full-screen history table verified.")
+          if "showHistory = true" in source:
+              raise SystemExit("Legacy compact History popup is still wired to an active button.")
+          if "smsHistoryDeviceCode = null; showSmsHistory = true" not in source:
+              raise SystemExit("Global History button is not routed to the full-screen daily table.")
+          print("Android v341 version, full-screen global/per-device History routes and daily table verified.")
           PY
 
       - name: Generate automated What's New release notes
