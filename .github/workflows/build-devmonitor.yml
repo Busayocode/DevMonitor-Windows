@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   detect:
@@ -178,7 +178,7 @@ jobs:
     if: needs.detect.outputs.android_zip != ''
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -295,11 +295,17 @@ jobs:
           python3 "$DRIVE_PATCH"
           cp MainActivity.kt "$MAIN"
           cp OnlineReports.kt "$PKG/OnlineReports.kt"
+          OWNER_AD_PATCH="trial-overlays/android/scripts/apply_owner_ad_exemption.py"
+          [ -f "$OWNER_AD_PATCH" ] || { echo "ERROR: Owner-only ad exemption patch is missing."; exit 1; }
+          cp "$MAIN" MainActivity.kt
+          python3 "$OWNER_AD_PATCH"
+          cp MainActivity.kt "$MAIN"
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_342.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_343.py")
-          echo "Applied SMS history, MOM Conversion, Google Drive authorization fixes and Android v343 version bump."
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_344.py")
+          echo "Applied v343 SMS History and MOM Conversion, Google Drive authorization fixes, owner-only ad exemption and Android v344 version bump."
 
-      - name: Verify Android v343 source, SMS history, MOM Conversion and Google Drive fixes
+      - name: Verify Android v344 preserves v343 SMS History and MOM Conversion
         shell: bash
         run: |
           set -euo pipefail
@@ -324,8 +330,8 @@ jobs:
               raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
           if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
-          if not re.search(r'versionCode\s*=\s*343', gradle):
-              raise SystemExit("Android build must declare versionCode 343 after the trial version overlay.")
+          if not re.search(r'versionCode\s*=\s*344', gradle):
+              raise SystemExit("Android build must declare versionCode 344 after preserving the v343 baseline.")
           if "allDailySnapshots" not in history or "SmsReportCell" not in history:
               raise SystemExit("SMS History is not routed to the daily report-style table.")
           if "DELETE FROM sms_checker_daily_results" not in store or "allDailySnapshots" not in store or "idx_sms_history_one_daily_result" not in store:
@@ -357,7 +363,11 @@ jobs:
               raise SystemExit("Cloud backup/restore is not consistently gated by persistent Firebase account state.")
           if "Scopes.DRIVE_APPFOLDER" not in source:
               raise SystemExit("Google Drive appDataFolder authorization scope is missing.")
-          print("Android v343 version, SMS History, MOM Conversion, Online Reports API-key identity and Drive backup auth gates verified.")
+          if "BroadcastReleaseManager(this).isCurrentUserBroadcastAdmin()" not in source:
+              raise SystemExit("Owner exemption is not tied to the existing verified admin UID gate.")
+          if "broadcastReleaseManager.isCurrentUserBroadcastAdmin()" not in source:
+              raise SystemExit("Owner account is not exempted from in-app ads.")
+          print("Android v344 version, v343 SMS History, MOM Conversion, owner-only ad exemption, Online Reports API-key identity and Drive backup auth gates verified.")
           PY
 
       - name: Generate automated What's New release notes
