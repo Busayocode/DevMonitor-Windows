@@ -295,6 +295,13 @@ jobs:
           python3 "$DRIVE_PATCH"
           cp MainActivity.kt "$MAIN"
           cp OnlineReports.kt "$PKG/OnlineReports.kt"
+          DRIVE_FOLDER_PATCH="trial-overlays/android/scripts/migrate_drive_backup_folder.py"
+          [ -f "$DRIVE_FOLDER_PATCH" ] || { echo "ERROR: Drive backup folder migration patch is missing."; exit 1; }
+          cp "$PKG/GoogleDriveBackup.kt" GoogleDriveBackup.kt
+          cp "$MAIN" MainActivity.kt
+          python3 "$DRIVE_FOLDER_PATCH"
+          cp GoogleDriveBackup.kt "$PKG/GoogleDriveBackup.kt"
+          cp MainActivity.kt "$MAIN"
           OWNER_AD_PATCH="trial-overlays/android/scripts/apply_owner_ad_exemption.py"
           [ -f "$OWNER_AD_PATCH" ] || { echo "ERROR: Owner-only ad exemption patch is missing."; exit 1; }
           cp "$MAIN" MainActivity.kt
@@ -361,8 +368,15 @@ jobs:
               raise SystemExit("A stale GoogleSignIn cached-account gate remains on cloud backup/restore.")
           if source.count("FirebaseAuth.getInstance().currentUser == null") < 4:
               raise SystemExit("Cloud backup/restore is not consistently gated by persistent Firebase account state.")
-          if "Scopes.DRIVE_APPFOLDER" not in source:
-              raise SystemExit("Google Drive appDataFolder authorization scope is missing.")
+          if "Scopes.DRIVE_FILE" not in source or "Scopes.DRIVE_APPFOLDER" in source:
+              raise SystemExit("Google Drive backup must use the visible-folder drive.file scope.")
+          drive = next(Path("build-source").rglob("GoogleDriveBackup.kt")).read_text(encoding="utf-8")
+          if "DevMonitor Backups" not in drive or "spaces=drive" not in drive or "mimeType='$FOLDER_MIME'" not in drive:
+              raise SystemExit("Visible My Drive backup-folder discovery/creation is missing.")
+          if "Uploading backup" not in drive or "Downloading backup" not in drive or "received" not in drive or "sent" not in drive:
+              raise SystemExit("Drive transfer progress is not based on actual transferred bytes.")
+          if "cloudProgressCallback" not in source or "LinearProgressIndicator(progress = { cloudProgress" not in source:
+              raise SystemExit("Drive backup/restore progress UI is missing.")
           if "BroadcastReleaseManager(this).isCurrentUserBroadcastAdmin()" not in source:
               raise SystemExit("Owner exemption is not tied to the existing verified admin UID gate.")
           if "broadcastReleaseManager.isCurrentUserBroadcastAdmin()" not in source:
