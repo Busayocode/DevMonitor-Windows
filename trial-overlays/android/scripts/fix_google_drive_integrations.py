@@ -99,8 +99,8 @@ s = s.replace('        return reports\n            .distinctBy { it.id }\n',
               '        if (reports.isEmpty()) {\n            if (discoveredFiles == 0) {\n                error("Google Drive returned no files for the configured company reports folder. Check that the folder contains reports and that its sharing permissions allow this app to view it.")\n            } else {\n                val examples = unsupportedFiles.take(3).joinToString()\n                error("Google Drive returned $discoveredFiles file(s), but none are supported Excel/CSV reports. Supported: XLSX, XLSM, XLS, CSV and Google Sheets. Found: $examples")\n            }\n        }\n\n        return reports\n            .distinctBy { it.id }\n', 1)
 s = s.replace('        val url = URL(\n            "$DRIVE_API/${URLEncoder.encode(file.id, "UTF-8")}?alt=media&supportsAllDrives=true&key=${URLEncoder.encode(BuildConfig.DRIVE_REPORT_API_KEY.trim(), "UTF-8")}"\n        )\n',
               '        val encodedId = URLEncoder.encode(file.id, "UTF-8")\n        val encodedKey = URLEncoder.encode(BuildConfig.DRIVE_REPORT_API_KEY.trim(), "UTF-8")\n        val downloadUrl = if (file.mimeType == GOOGLE_SHEETS_MIME) {\n            "$DRIVE_API/$encodedId/export?mimeType=$XLSX_MIME&key=$encodedKey"\n        } else {\n            "$DRIVE_API/$encodedId?alt=media&supportsAllDrives=true&key=$encodedKey"\n        }\n        val url = URL(downloadUrl)\n', 1)
-if "GOOGLE_SHEETS_MIME" not in s or "corpora=allDrives" not in s or "discoveredFiles" not in s:
-    raise SystemExit("Online Reports shared-drive/Google Sheets discovery patch was incomplete.")
+if "GOOGLE_SHEETS_MIME" not in s or "discoveredFiles" not in s or "corpora=allDrives" in s or 'append("&spaces=drive&pageSize=1000")' not in s:
+    raise SystemExit("Online Reports phone-build search scope or Google Sheets discovery patch was incomplete.")
 online.write_text(s, encoding="utf-8")
 
 main = Path("MainActivity.kt")
