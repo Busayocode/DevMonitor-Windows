@@ -299,7 +299,7 @@ jobs:
           [ -f "$DRIVE_FOLDER_PATCH" ] || { echo "ERROR: Drive backup folder migration patch is missing."; exit 1; }
           cp "$PKG/GoogleDriveBackup.kt" GoogleDriveBackup.kt
           cp "$MAIN" MainActivity.kt
-          python3 "$DRIVE_FOLDER_PATCH"
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/$DRIVE_FOLDER_PATCH")
           cp GoogleDriveBackup.kt "$PKG/GoogleDriveBackup.kt"
           cp MainActivity.kt "$MAIN"
           OWNER_AD_PATCH="trial-overlays/android/scripts/apply_owner_ad_exemption.py"
