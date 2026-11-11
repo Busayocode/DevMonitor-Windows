@@ -369,14 +369,12 @@ jobs:
           STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-          DRIVE_API_KEY: ${{ secrets.DRIVE_REPORT_API_KEY }}
         run: |
           set -euo pipefail
           [ -n "$KEYSTORE_B64" ] || { echo "ERROR: Configure FIELD_PULSE_RELEASE_KEYSTORE_BASE64 or RELEASE_KEYSTORE_BASE64."; exit 1; }
           [ -n "$STORE_PASSWORD" ] || { echo "ERROR: RELEASE_STORE_PASSWORD secret is missing."; exit 1; }
           [ -n "$KEY_ALIAS" ] || { echo "ERROR: RELEASE_KEY_ALIAS secret is missing."; exit 1; }
           [ -n "$KEY_PASSWORD" ] || { echo "ERROR: RELEASE_KEY_PASSWORD secret is missing."; exit 1; }
-          [ -n "$DRIVE_API_KEY" ] || { echo "ERROR: DRIVE_REPORT_API_KEY secret is missing."; exit 1; }
           # Android's release signing config is declared in app/build.gradle.kts.
           # Gradle's file(...) therefore resolves relative paths from the app module,
           # not from the repository root. Put the keystore exactly where Gradle expects it.
@@ -398,8 +396,8 @@ jobs:
             printf 'RELEASE_STORE_PASSWORD=%s\n' "$STORE_PASSWORD"
             printf 'RELEASE_KEY_ALIAS=%s\n' "$KEY_ALIAS"
             printf 'RELEASE_KEY_PASSWORD=%s\n' "$KEY_PASSWORD"
-            printf 'DRIVE_REPORT_API_KEY=%s\n' "$DRIVE_API_KEY"
           } >> "$PROJECT_DIR/gradle.properties"
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/configure_drive_api_key.py")
 
           # Fail early with a clear diagnostic if the signing file is not at the
           # exact path Gradle will consume.
@@ -430,7 +428,6 @@ jobs:
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
         env:
-          DRIVE_API_KEY: ${{ secrets.DRIVE_REPORT_API_KEY }}
         run: |
           set -euo pipefail
           python3 - <<'PYCODE'
@@ -438,7 +435,7 @@ jobs:
           from pathlib import Path
 
           props = Path("gradle.properties").read_text(encoding="utf-8").splitlines()
-          expected = os.environ.get("DRIVE_API_KEY", "")
+          expected = "AIzaSyD2pWvYFibsh1-i0q62MhEWdYNaomTTaWk"
           actual = [line.split("=", 1)[1] for line in props if line.startswith("DRIVE_REPORT_API_KEY=")]
           folder = [line.split("=", 1)[1] for line in props if line.startswith("DRIVE_REPORT_FOLDER_ID=")]
 
@@ -456,7 +453,7 @@ jobs:
           ):
               raise SystemExit("ERROR: generated BuildConfig does not contain the configured Online Reports API key.")
 
-          print("Online Reports folder ID and API key verified in the generated release configuration (values hidden).")
+          print("Online Reports folder ID and embedded API key verified in the generated release configuration.")
           PYCODE
 
       - name: Verify release APK certificate
