@@ -229,6 +229,32 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Project directory: $PROJECT_DIR"
 
+      - name: Preserve original Android source snapshot for review
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p source-review
+          for name in MainActivity.kt GoogleDriveBackup.kt OnlineReports.kt gradle.properties settings.gradle.kts app/build.gradle.kts app/google-services.json; do
+            while IFS= read -r -d '' file; do
+              dest="source-review/${file#build-source/}"
+              mkdir -p "$(dirname "$dest")"
+              cp "$file" "$dest"
+            done < <(find build-source -type f -path "*/$name" -print0)
+          done
+          [ -s "$(find source-review -type f -name MainActivity.kt -print -quit)" ] || {
+            echo "ERROR: MainActivity.kt missing from extracted Android source."
+            exit 1
+          }
+          cd source-review
+          zip -qr ../DevMonitor-v340-original-source-review.zip .
+      - name: Upload original Android source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Android-Original-Source-Review
+          path: DevMonitor-v340-original-source-review.zip
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Apply trial Android UI overlay
         shell: bash
         run: |
