@@ -297,11 +297,10 @@ jobs:
           cp OnlineReports.kt "$PKG/OnlineReports.kt"
           DRIVE_FOLDER_PATCH="trial-overlays/android/scripts/migrate_drive_backup_folder.py"
           [ -f "$DRIVE_FOLDER_PATCH" ] || { echo "ERROR: Drive backup folder migration patch is missing."; exit 1; }
-          cp "$PKG/GoogleDriveBackup.kt" GoogleDriveBackup.kt
-          cp "$MAIN" MainActivity.kt
+          # The migration script edits files directly inside PROJECT_DIR.
+          # Do not stage copies in the repository root and copy them back:
+          # doing so would overwrite the migrated source with the pre-migration files.
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/$DRIVE_FOLDER_PATCH")
-          cp GoogleDriveBackup.kt "$PKG/GoogleDriveBackup.kt"
-          cp MainActivity.kt "$MAIN"
           OWNER_AD_PATCH="trial-overlays/android/scripts/apply_owner_ad_exemption.py"
           [ -f "$OWNER_AD_PATCH" ] || { echo "ERROR: Owner-only ad exemption patch is missing."; exit 1; }
           cp "$MAIN" MainActivity.kt
