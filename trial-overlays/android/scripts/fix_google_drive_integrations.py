@@ -65,6 +65,36 @@ if s.count("androidKeyIdentityHeaders(context).forEach") != 2:
 s = s.replace("OnlineReportStore.listReports()", "OnlineReportStore.listReports(context)", 1)
 if "OnlineReportStore.listReports(context)" not in s:
     raise SystemExit("Online Reports UI call was not updated to pass Context.")
+# Search shared folders across all accessible Drive corpora, not only the default user corpus.
+old_query = '''val query = "'$folderId' in parents and trashed = false and mimeType != \'application/vnd.google-apps.folder\'"'''
+new_query = '''val query = "'$folderId' in parents and trashed = false"'''
+if old_query in s:
+    s = s.replace(old_query, new_query, 1)
+elif new_query not in s:
+    raise SystemExit("Online Reports folder query anchor not found.")
+s = s.replace('append("&spaces=drive&pageSize=1000")',
+              'append("&spaces=drive&corpora=allDrives&pageSize=1000")', 1)
+if "corpora=allDrives" not in s:
+    raise SystemExit("Online Reports all-drives search scope was not added.")
+
+# Native Google Sheets files have no .xlsx suffix; list them and export as XLSX on download.
+s = s.replace('    val size: Long?\n)', '    val size: Long?,\n    val mimeType: String = ""\n)', 1)
+s = s.replace('    private const val XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"\n',
+              '    private const val XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"\n    private const val GOOGLE_SHEETS_MIME = "application/vnd.google-apps.spreadsheet"\n', 1)
+s = s.replace('        var pageToken: String? = null\n',
+              '        var pageToken: String? = null\n        var discoveredFiles = 0\n        val unsupportedFiles = mutableListOf<String>()\n', 1)
+s = s.replace('                        val mimeType = item.optString("mimeType").trim()\n                        val supported = mimeType == XLSX_MIME || SUPPORTED_EXTENSIONS.any { lowerName.endsWith(it) }\n',
+              '                        val mimeType = item.optString("mimeType").trim()\n                        if (id.isNotBlank() && name.isNotBlank()) discoveredFiles++\n                        val supported = mimeType == XLSX_MIME || mimeType == GOOGLE_SHEETS_MIME || SUPPORTED_EXTENSIONS.any { lowerName.endsWith(it) }\n', 1)
+s = s.replace('                                    item.optLong("size").takeIf { it > 0 }\n',
+              '                                    item.optLong("size").takeIf { it > 0 },\n                                    mimeType\n', 1)
+s = s.replace('                            )\n                        }\n                    }\n                }\n                pageToken = payload.optString("nextPageToken").takeIf { it.isNotBlank() }\n',
+              '                            )\n                        } else if (id.isNotBlank() && name.isNotBlank()) {\n                            unsupportedFiles.add("$name ($mimeType)")\n                        }\n                    }\n                }\n                pageToken = payload.optString("nextPageToken").takeIf { it.isNotBlank() }\n', 1)
+s = s.replace('        return reports\n            .distinctBy { it.id }\n',
+              '        if (reports.isEmpty()) {\n            if (discoveredFiles == 0) {\n                error("Google Drive returned no files for the configured company reports folder. Check that the folder contains reports and that its sharing permissions allow this app to view it.")\n            } else {\n                val examples = unsupportedFiles.take(3).joinToString()\n                error("Google Drive returned $discoveredFiles file(s), but none are supported Excel/CSV reports. Supported: XLSX, XLSM, XLS, CSV and Google Sheets. Found: $examples")\n            }\n        }\n\n        return reports\n            .distinctBy { it.id }\n', 1)
+s = s.replace('        val url = URL(\n            "$DRIVE_API/${URLEncoder.encode(file.id, "UTF-8")}?alt=media&supportsAllDrives=true&key=${URLEncoder.encode(BuildConfig.DRIVE_REPORT_API_KEY.trim(), "UTF-8")}"\n        )\n',
+              '        val encodedId = URLEncoder.encode(file.id, "UTF-8")\n        val encodedKey = URLEncoder.encode(BuildConfig.DRIVE_REPORT_API_KEY.trim(), "UTF-8")\n        val downloadUrl = if (file.mimeType == GOOGLE_SHEETS_MIME) {\n            "$DRIVE_API/$encodedId/export?mimeType=$XLSX_MIME&key=$encodedKey"\n        } else {\n            "$DRIVE_API/$encodedId?alt=media&supportsAllDrives=true&key=$encodedKey"\n        }\n        val url = URL(downloadUrl)\n', 1)
+if "GOOGLE_SHEETS_MIME" not in s or "corpora=allDrives" not in s or "discoveredFiles" not in s:
+    raise SystemExit("Online Reports shared-drive/Google Sheets discovery patch was incomplete.")
 online.write_text(s, encoding="utf-8")
 
 main = Path("MainActivity.kt")
