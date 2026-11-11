@@ -427,11 +427,9 @@ jobs:
       - name: Verify Online Reports configuration
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
-        env:
         run: |
           set -euo pipefail
           python3 - <<'PYCODE'
-          import os
           from pathlib import Path
 
           props = Path("gradle.properties").read_text(encoding="utf-8").splitlines()
