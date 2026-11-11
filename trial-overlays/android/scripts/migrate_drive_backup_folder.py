@@ -172,7 +172,7 @@ object GoogleDriveBackup {
 ''', encoding="utf-8")
 
 s = main.read_text(encoding="utf-8")
-s = re.sub(r"\\bScopes\\.DRIVE_APPFOLDER\\b", "Scopes.DRIVE_FILE", s)
+s = re.sub(r"\bScopes\.DRIVE_APPFOLDER\b", "Scopes.DRIVE_FILE", s)
 if "Scopes.DRIVE_APPFOLDER" in s:
     raise SystemExit("Legacy DRIVE_APPFOLDER scope remains after migration; refusing to continue.")
 s = s.replace("Google Drive App Folder permission", "Google Drive file access")
