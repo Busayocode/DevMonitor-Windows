@@ -72,10 +72,16 @@ if old_query in s:
     s = s.replace(old_query, new_query, 1)
 elif new_query not in s:
     raise SystemExit("Online Reports folder query anchor not found.")
-s = s.replace('append("&spaces=drive&pageSize=1000")',
-              'append("&spaces=drive&corpora=allDrives&pageSize=1000")', 1)
-if "corpora=allDrives" not in s:
-    raise SystemExit("Online Reports all-drives search scope was not added.")
+# Preserve the phone-build search corpus. The configured company folder is
+# shared with the signed-in Google account, not necessarily located inside a
+# Shared Drive. The original phone build correctly searches the user's corpus.
+# Keep supportsAllDrives/includeItemsFromAllDrives below for compatibility,
+# but do not force corpora=allDrives (which can hide shared-with-me folders).
+if 'append("&spaces=drive&pageSize=1000")' not in s:
+    raise SystemExit("Original Online Reports Drive search scope was not found.")
+if "corpora=allDrives" in s:
+    s = s.replace('append("&spaces=drive&corpora=allDrives&pageSize=1000")',
+                  'append("&spaces=drive&pageSize=1000")', 1)
 
 # Native Google Sheets files have no .xlsx suffix; list them and export as XLSX on download.
 s = s.replace('    val size: Long?\n)', '    val size: Long?,\n    val mimeType: String = ""\n)', 1)
