@@ -295,6 +295,9 @@ jobs:
           python3 "$DRIVE_PATCH"
           cp MainActivity.kt "$MAIN"
           cp OnlineReports.kt "$PKG/OnlineReports.kt"
+          ONLINE_LOADING_PATCH="trial-overlays/android/scripts/fix_online_reports_loading.py"
+          [ -f "$ONLINE_LOADING_PATCH" ] || { echo "ERROR: Online Reports loading fix is missing."; exit 1; }
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/$ONLINE_LOADING_PATCH")
           DRIVE_FOLDER_PATCH="trial-overlays/android/scripts/migrate_drive_backup_folder.py"
           [ -f "$DRIVE_FOLDER_PATCH" ] || { echo "ERROR: Drive backup folder migration patch is missing."; exit 1; }
           # The migration script edits files directly inside PROJECT_DIR.
@@ -310,9 +313,10 @@ jobs:
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_343.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_344.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_345.py")
-          echo "Applied v343 SMS History and MOM Conversion, Google Drive authorization fixes, owner-only ad exemption, Loaded Report parity updates and Android v345 version bump."
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_346.py")
+          echo "Applied v343 SMS History and MOM Conversion, SMS History table polish and daily totals, Google Drive authorization/loading fixes, owner-only ad exemption and Android v346 version bump."
 
-      - name: Verify Android v345 preserves v343 SMS History and MOM Conversion
+      - name: Verify Android v346 preserves v343 SMS History and MOM Conversion
         shell: bash
         run: |
           set -euo pipefail
@@ -337,8 +341,8 @@ jobs:
               raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
           if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
-          if not re.search(r'versionCode\s*=\s*345', gradle):
-              raise SystemExit("Android build must declare versionCode 345 after preserving the v343 baseline.")
+          if not re.search(r'versionCode\\s*=\\s*346', gradle):
+              raise SystemExit("Android build must declare versionCode 346 after preserving the v343 baseline.")
           if "allDailySnapshots" not in history or "SmsHistoryTableCell" not in history:
               raise SystemExit("SMS History is not routed to the report-style daily table.")
           if "DELETE FROM sms_checker_daily_results" not in store or "allDailySnapshots" not in store or "idx_sms_history_one_daily_result" not in store:
@@ -348,6 +352,10 @@ jobs:
           for feature in ("Customize View", "sms_history_table_header", "Show more", "Summary", "Breakdown", "coerceIn(0.6f, 2f)"):
               if feature not in history:
                   raise SystemExit(f"SMS History table parity feature is missing: {feature}")
+          if "sms_history_daily_totals" not in history or "DAILY TOTAL" not in history or "filteredRows.sumOf" not in history:
+              raise SystemExit("SMS History daily totals row is missing or is not calculated across the filtered device set.")
+          if "fontSize = (14f * zoom).sp" not in history or "smsHistoryMonthHeaderTint" not in history or "MaterialTheme.colorScheme.surfaceVariant" not in history:
+              raise SystemExit("SMS History table visual styling is not aligned with Loaded Report and the app theme.")
           if "initialDeviceCode" not in history:
               raise SystemExit("Per-device History prefilter is missing.")
           if 'Text("History"' not in source or "smsHistoryDeviceCode = code" not in source:
@@ -367,6 +375,8 @@ jobs:
           online_text = online[0].read_text(encoding="utf-8")
           if online_text.count("androidKeyIdentityHeaders(context).forEach") != 2 or "OnlineReportStore.listReports(context)" not in online_text:
               raise SystemExit("Online Reports requests are missing Android package/certificate identity headers.")
+          if "requestDeadlineNanos" not in online_text or "TimeoutCancellationException" not in online_text or "finally {\n            refreshing = false" not in online_text:
+              raise SystemExit("Online Reports does not have bounded Google Drive listing and a guaranteed loading-state reset.")
           if "GoogleSignIn.getLastSignedInAccount(this@MainActivity)" in source:
               raise SystemExit("A stale GoogleSignIn cached-account gate remains on cloud backup/restore.")
           if source.count("FirebaseAuth.getInstance().currentUser == null") < 4:
@@ -384,7 +394,7 @@ jobs:
               raise SystemExit("Owner exemption is not tied to the existing verified admin UID gate.")
           if "broadcastReleaseManager.isCurrentUserBroadcastAdmin()" not in source:
               raise SystemExit("Owner account is not exempted from in-app ads.")
-          print("Android v345 version, v343 SMS History, MOM Conversion, owner-only ad exemption, Online Reports API-key identity and Drive backup auth gates verified.")
+          print("Android v346 version, v343 SMS History and MOM Conversion, Loaded Report-style SMS daily totals, bounded Online Reports loading, owner-only ad exemption and Drive backup auth gates verified.")
           PY
 
       - name: Generate automated What's New release notes
