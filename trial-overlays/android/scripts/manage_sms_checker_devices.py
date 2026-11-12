@@ -1,6 +1,6 @@
 from pathlib import Path
 
-p = Path("MainActivity.kt")
+p = Path("app/src/main/java/com/aziitech/simregmonitor/MainActivity.kt")
 s = p.read_text(encoding="utf-8")
 
 anchor = '        var showSmsHistory by remember { mutableStateOf(false) }\n'
