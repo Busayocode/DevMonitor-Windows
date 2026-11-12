@@ -5,6 +5,7 @@ s = p.read_text(encoding="utf-8")
 
 anchor = '        var showSmsHistory by remember { mutableStateOf(false) }\n'
 addition = '''        var showSmsDeviceManager by remember { mutableStateOf(false) }
+        var showSmsDeviceDeleteConfirm by remember { mutableStateOf(false) }
         val selectedSmsDeviceCodes = remember { mutableStateListOf<String>() }
         var smsDeviceEditTarget by remember { mutableStateOf<String?>(null) }
         var smsDeviceEditValue by remember { mutableStateOf("") }
@@ -99,11 +100,27 @@ addition = '''        if (showSmsDeviceManager) {
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { removeSmsCheckerDevices(selectedSmsDeviceCodes.toSet()) }, enabled = selectedSmsDeviceCodes.isNotEmpty() && !running) {
+                    TextButton(onClick = { showSmsDeviceDeleteConfirm = true }, enabled = selectedSmsDeviceCodes.isNotEmpty() && !running) {
                         Text("Delete selected (${selectedSmsDeviceCodes.size})", color = MaterialTheme.colorScheme.error)
                     }
                 },
                 dismissButton = { TextButton(onClick = { showSmsDeviceManager = false; selectedSmsDeviceCodes.clear() }) { Text("Done") } }
+            )
+        }
+
+        if (showSmsDeviceDeleteConfirm) {
+            val deleteCount = selectedSmsDeviceCodes.size
+            AlertDialog(
+                onDismissRequest = { showSmsDeviceDeleteConfirm = false },
+                title = { Text("Permanently delete selected devices?") },
+                text = { Text("This removes $deleteCount selected item${if (deleteCount == 1) "" else "s"} from the active SMS Checker list and permanently deletes their saved SMS History. This cannot be undone.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showSmsDeviceDeleteConfirm = false
+                        removeSmsCheckerDevices(selectedSmsDeviceCodes.toSet())
+                    }) { Text("Delete permanently", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { showSmsDeviceDeleteConfirm = false }) { Text("Cancel") } }
             )
         }
 
