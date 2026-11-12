@@ -52,10 +52,22 @@ addition = '''
                 (if (key.trim().uppercase(Locale.US) == oldKey) newCode else key) to value
             }
             persist()
+            if (selectedTab != 6) {
+                val updatedProfileCodes = savedMyDevices().map {
+                    if (it.trim().uppercase(Locale.US) == oldKey) newCode else it
+                }
+                store.setSetting(SETTING_MY_DEVICES_CODES, updatedProfileCodes.joinToString("|"))
+                store.setSetting(SETTING_MY_DEVICES_SETUP, "true")
+                myDevicesDatabase.replaceCodes(updatedProfileCodes)
+                saveActiveProfileSnapshot(updatedProfileCodes)
+            }
             showSmsDeviceManager = false
             smsDeviceEditTarget = null
-            scope.launch(Dispatchers.IO) { activeSmsHistoryStore.renameCode(oldCode, newCode) }
-            message = "Updated $oldCode to $newCode. Its saved SMS history was carried over."
+            scope.launch {
+                runCatching { withContext(Dispatchers.IO) { activeSmsHistoryStore.renameCode(oldCode, newCode) } }
+                    .onSuccess { message = "Updated $oldCode to $newCode. Its saved SMS history was carried over." }
+                    .onFailure { message = "Code updated, but SMS History could not be moved: ${it.message ?: "unknown error"}" }
+            }
         }
 '''
 if s.count(anchor) != 1:
