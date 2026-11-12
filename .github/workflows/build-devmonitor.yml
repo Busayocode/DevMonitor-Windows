@@ -525,11 +525,11 @@ jobs:
           if not expected or actual != [expected]:
               raise SystemExit("ERROR: top-level Gradle API-key property is missing, duplicated, or mismatched.")
 
-          if folder != ["1d2mCmBiFgQXjIYHAvgjXAD_JgSvITbwI"]:
+          if folder != ["1d2mCmBiFgQXoIYHAvgjXAD_JgSvITbwI"]:
               raise SystemExit("ERROR: Online Reports folder ID is missing, duplicated, or mismatched.")
 
           generated = list(Path("app/build/generated").rglob("BuildConfig.java"))
-          folder_id = "1d2mCmBiFgQXjIYHAvgjXAD_JgSvITbwI"
+          folder_id = "1d2mCmBiFgQXoIYHAvgjXAD_JgSvITbwI"
           if not any(
               "DRIVE_REPORT_API_KEY" in p.read_text(encoding="utf-8")
               and expected in p.read_text(encoding="utf-8")
