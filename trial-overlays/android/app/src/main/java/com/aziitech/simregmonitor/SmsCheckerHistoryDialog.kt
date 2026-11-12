@@ -362,7 +362,7 @@ fun SmsCheckerHistoryDialog(
                     LazyColumn(
                         Modifier.fillMaxSize(), state = listState,
                         contentPadding = PaddingValues(bottom = 24.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(0.dp)
                     ) {
                         item(key = "sms_history_table_intro") {
                             Text("Excel-style history table. Device / trade code stays pinned while the rest scrolls horizontally. Pinch with two fingers to zoom; tap a row to select it.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -390,7 +390,12 @@ fun SmsCheckerHistoryDialog(
                                     }
                                     visibleDaily.forEach { column ->
                                         val date = column.key.removePrefix("DATE:")
-                                        SmsHistoryTableCell(row.byDate[date]?.record?.result?.today?.toString() ?: "—", column.width, focused, tableZoom)
+                                        val month = runCatching { LocalDate.parse(date).monthValue }.getOrDefault(1)
+                                        SmsHistoryTableCell(
+                                            row.byDate[date]?.record?.result?.today?.toString() ?: "—",
+                                            column.width, focused, tableZoom,
+                                            tint = smsHistoryMonthTint(month, isSystemInDarkTheme())
+                                        )
                                     }
                                     visibleSummary.forEach { column ->
                                         val result = latest?.record?.result
