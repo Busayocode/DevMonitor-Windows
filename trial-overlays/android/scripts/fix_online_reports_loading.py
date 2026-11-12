@@ -1,7 +1,8 @@
 from pathlib import Path
 import re
 
-online = Path("OnlineReports.kt")
+package_dir = Path("app/src/main/java/com/aziitech/simregmonitor")
+online = package_dir / "OnlineReports.kt"
 s = online.read_text(encoding="utf-8")
 
 # Bound the complete paginated Drive listing, not just each individual socket read.
@@ -88,7 +89,7 @@ s = s.replace("connectTimeout = 15_000\n            readTimeout = 120_000",
 
 online.write_text(s, encoding="utf-8")
 
-main = Path("MainActivity.kt")
+main = package_dir / "MainActivity.kt"
 m = main.read_text(encoding="utf-8")
 old = """                        val result = withContext(Dispatchers.IO) {
                             runCatching { OnlineReportStore.downloadToCache(this@MainActivity, onlineFile) }
