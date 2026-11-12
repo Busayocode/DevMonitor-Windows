@@ -4,23 +4,19 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 import json
 
-# Reproduce OnlineReportStore.listReports() exactly: same query, fields,
-# spaces, pagination options and API-key authentication. Do not add Android
-# identity headers or a separate folder-metadata request; neither is sent by
-# the app itself.
-props = Path("gradle.properties").read_text(encoding="utf-8").splitlines()
+# Mirror OnlineReportStore.listReports() exactly. The app sends only Accept;
+# do not add identity headers, alternate corpora, or a separate folder lookup.
 values = {}
-for line in props:
+for line in Path("gradle.properties").read_text(encoding="utf-8").splitlines():
     if "=" in line and not line.lstrip().startswith("#"):
         key, value = line.split("=", 1)
         values[key.strip()] = value.strip()
 api_key = values.get("DRIVE_REPORT_API_KEY", "")
 folder_id = values.get("DRIVE_REPORT_FOLDER_ID", "")
 if not api_key or not folder_id:
-    raise SystemExit("Online Reports diagnostic: top-level API key or folder ID is missing.")
+    raise SystemExit("Online Reports diagnostic: required Gradle properties are missing.")
 
 query = f"'{folder_id}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'"
-fields = "nextPageToken,files(id,name,modifiedTime,size,mimeType)"
 params = urlencode({
     "q": query,
     "spaces": "drive",
@@ -28,36 +24,32 @@ params = urlencode({
     "supportsAllDrives": "true",
     "includeItemsFromAllDrives": "true",
     "orderBy": "modifiedTime desc",
-    "fields": fields,
+    "fields": "nextPageToken,files(id,name,modifiedTime,size,mimeType)",
     "key": api_key,
 })
-url = "https://www.googleapis.com/drive/v3/files?" + params
-request = Request(url, headers={"Accept": "application/json"}, method="GET")
+request = Request(
+    "https://www.googleapis.com/drive/v3/files?" + params,
+    headers={"Accept": "application/json"},
+    method="GET",
+)
 try:
     with urlopen(request, timeout=25) as response:
         payload = json.loads(response.read().decode("utf-8"))
 except HTTPError as exc:
-    detail = exc.read().decode("utf-8", errors="replace")[:1600]
-    raise SystemExit(f"Exact Online Reports request returned HTTP {exc.code}: {detail}")
+    detail = exc.read().decode("utf-8", errors="replace")[:1200]
+    raise SystemExit(f"App-equivalent Drive listing returned HTTP {exc.code}: {detail}")
 except URLError as exc:
-    raise SystemExit(f"Exact Online Reports request could not reach Google Drive: {exc}")
+    raise SystemExit(f"App-equivalent Drive listing network error: {exc}")
 
 files = payload.get("files") or []
-supported = []
-extensions = (".xlsx", ".xlsm", ".xls", ".csv")
-xlsx_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-for item in files:
-    name = (item.get("name") or "").strip()
-    mime = (item.get("mimeType") or "").strip()
-    if mime == xlsx_mime or name.lower().endswith(extensions):
-        supported.append(item)
-
-print(f"Exact app-equivalent Drive query returned {len(files)} item(s); {len(supported)} supported report(s).")
+supported = [
+    item for item in files
+    if (item.get("mimeType") == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    or (item.get("name") or "").lower().endswith((".xlsx", ".xlsm", ".xls", ".csv"))
+]
+print(f"App-equivalent Drive listing: {len(files)} items, {len(supported)} supported reports.")
 for item in supported[:10]:
     print("Visible report:", item.get("name", "(unnamed)"))
 if not supported:
-    raise SystemExit(
-        "Exact app-equivalent Drive query returned no supported report files. "
-        "Android compilation will continue; compare this run's request result with the phone build."
-    )
-print("Online Reports live preflight passed using the exact in-app listing request.")
+    raise SystemExit("The exact in-app listing request returned no supported reports. APK compilation will continue.")
+print("Online Reports live preflight passed.")
