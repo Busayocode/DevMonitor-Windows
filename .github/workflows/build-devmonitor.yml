@@ -338,12 +338,15 @@ jobs:
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
           if not re.search(r'versionCode\s*=\s*344', gradle):
               raise SystemExit("Android build must declare versionCode 344 after preserving the v343 baseline.")
-          if "allDailySnapshots" not in history or "SmsReportCell" not in history:
-              raise SystemExit("SMS History is not routed to the daily report-style table.")
+          if "allDailySnapshots" not in history or "SmsHistoryTableCell" not in history:
+              raise SystemExit("SMS History is not routed to the report-style daily table.")
           if "DELETE FROM sms_checker_daily_results" not in store or "allDailySnapshots" not in store or "idx_sms_history_one_daily_result" not in store:
               raise SystemExit("Daily SMS snapshot upsert/one-row-per-device-per-day store is missing.")
-          if "latest return saved per device per day" not in history or "DEVICE / TRADE CODE" not in history:
+          if "one latest result per device per day" not in history or "DEVICE / TRADE CODE" not in history:
               raise SystemExit("Loaded Report-style daily SMS table is missing its daily snapshot layout.")
+          for feature in ("Customize View", "sms_history_table_header", "Show more", "Summary", "Breakdown", "coerceIn(0.6f, 2f)"):
+              if feature not in history:
+                  raise SystemExit(f"SMS History table parity feature is missing: {feature}")
           if "initialDeviceCode" not in history:
               raise SystemExit("Per-device History prefilter is missing.")
           if 'Text("History"' not in source or "smsHistoryDeviceCode = code" not in source:
