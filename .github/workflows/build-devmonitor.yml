@@ -477,6 +477,7 @@ jobs:
             printf 'RELEASE_KEY_PASSWORD=%s\n' "$KEY_PASSWORD"
           } >> "$PROJECT_DIR/gradle.properties"
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/configure_drive_api_key.py")
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/set_drive_report_folder.py")
 
           # Fail early with a clear diagnostic if the signing file is not at the
           # exact path Gradle will consume.
