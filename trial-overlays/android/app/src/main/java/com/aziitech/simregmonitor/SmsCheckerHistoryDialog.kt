@@ -111,8 +111,8 @@ fun SmsCheckerHistoryDialog(
             val latest = scoped.maxByOrNull { it.completedAt } ?: return@mapNotNull null
             val total = scoped.sumOf { it.record.result?.today ?: 0 }
             val searchable = listOf(row.code, latest.record.status.name, latest.record.type.name,
-                latest.record.error.orEmpty(), latest.record.result?.raw.orEmpty())
-                .any { it.contains(query.trim(), ignoreCase = true) }
+                latest.record.error.orEmpty(), latest.record.result?.raw.orEmpty()).any { it.contains(query.trim(), ignoreCase = true) } ||
+                row.byDate.values.any { it.record.code.contains(query.trim(), ignoreCase = true) }
             val statusOk = when (statusFilter) {
                 "Success" -> latest.record.status == AttemptStatus.SUCCESS
                 "Not found" -> latest.record.status == AttemptStatus.NOT_FOUND
@@ -270,7 +270,7 @@ fun SmsCheckerHistoryDialog(
                     )
                     TextButton(onClick = { refreshNonce++ }) { Text("Refresh") }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                     listOf("All", "Success", "Not found", "Failed").forEach { option ->
                         FilterChip(statusFilter == option, { statusFilter = option; additionalRowsToShow = 0 }, label = { Text(option, style = MaterialTheme.typography.labelSmall) })
                     }
@@ -310,7 +310,7 @@ fun SmsCheckerHistoryDialog(
                     TextButton(onClick = { query = ""; selectedCode = null }) { Text("Show all devices") }
                 }
 
-                Box(Modifier.fillMaxSize().then(tableGesture)) {
+                Box(Modifier.weight(1f).fillMaxWidth().then(tableGesture)) {
                     LazyColumn(
                         Modifier.fillMaxSize(), state = listState,
                         contentPadding = PaddingValues(bottom = 24.dp),
