@@ -1,6 +1,7 @@
 package com.aziitech.simregmonitor
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -16,10 +17,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.flow.collectLatest
@@ -415,8 +418,30 @@ fun SmsCheckerHistoryDialog(
                                 }
                             }
                         }
+                        item(key = "sms_history_daily_totals") {
+                            Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
+                                visibleFixed.firstOrNull { it.key == "DEVICE" }?.let { column ->
+                                    SmsHistoryTableCell("DAILY TOTAL", column.width, false, tableZoom, bold = true, footer = true)
+                                }
+                                Row(Modifier.weight(1f).horizontalScroll(tableScroll)) {
+                                    visibleFixed.filterNot { it.key == "DEVICE" }.forEach { column ->
+                                        SmsHistoryTableCell("", column.width, false, tableZoom, footer = true)
+                                    }
+                                    visibleDaily.forEach { column ->
+                                        val date = column.key.removePrefix("DATE:")
+                                        val total = filteredRows.sumOf { it.byDate[date]?.record?.result?.today ?: 0 }
+                                        val month = runCatching { LocalDate.parse(date).monthValue }.getOrDefault(1)
+                                        SmsHistoryTableCell(total.toString(), column.width, false, tableZoom, bold = true, footer = true,
+                                            tint = smsHistoryMonthTint(month, isSystemInDarkTheme()))
+                                    }
+                                    visibleSummary.forEach { column ->
+                                        SmsHistoryTableCell("", column.width, false, tableZoom, footer = true)
+                                    }
+                                }
+                            }
+                        }
                         item(key = "sms_history_footer") {
-                            Text("${renderedRows.size} of ${filteredRows.size} device(s) • daily columns show each saved Today value • MTD / Active / bars show the latest return in the selected date scope • same-day rechecks replace that day's snapshot", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${renderedRows.size} of ${filteredRows.size} device(s) • daily totals include all filtered devices, including rows not yet rendered • MTD / Active / bars show the latest return in the selected date scope • same-day rechecks replace that day's snapshot", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     if (tableHeaderIndex >= 0 && listState.firstVisibleItemIndex > tableHeaderIndex) {
@@ -438,14 +463,16 @@ private fun SmsHistoryTableHeader(
     tableScroll: androidx.compose.foundation.ScrollState,
     zoom: Float
 ) {
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-        Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            fixed.firstOrNull { it.key == "DEVICE" }?.let { SmsHistoryTableCell(it.label, it.width, false, zoom, header = true) }
-            Row(Modifier.weight(1f).horizontalScroll(tableScroll), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                fixed.filterNot { it.key == "DEVICE" }.forEach { SmsHistoryTableCell(it.label, it.width, false, zoom, header = true) }
-                daily.forEach { SmsHistoryTableCell(it.label, it.width, false, zoom, header = true) }
-                summary.forEach { SmsHistoryTableCell(it.label, it.width, false, zoom, header = true) }
+    Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
+        fixed.firstOrNull { it.key == "DEVICE" }?.let { SmsHistoryTableCell(it.label, it.width, false, zoom, header = true) }
+        Row(Modifier.weight(1f).horizontalScroll(tableScroll)) {
+            fixed.filterNot { it.key == "DEVICE" }.forEach { SmsHistoryTableCell(it.label, it.width, false, zoom, header = true) }
+            daily.forEach { column ->
+                val month = runCatching { LocalDate.parse(column.key.removePrefix("DATE:")).monthValue }.getOrDefault(1)
+                SmsHistoryTableCell(column.label, column.width, false, zoom, header = true,
+                    tint = smsHistoryMonthHeaderTint(month, isSystemInDarkTheme()))
             }
+            summary.forEach { SmsHistoryTableCell(it.label, it.width, false, zoom, header = true) }
         }
     }
 }
@@ -458,18 +485,45 @@ private fun SmsHistoryTableCell(
     zoom: Float,
     header: Boolean = false,
     bold: Boolean = false,
+    footer: Boolean = false,
+    tint: Color? = null,
     onClick: (() -> Unit)? = null
 ) {
-    Surface(
-        Modifier.width(width * zoom).heightIn(min = 44.dp * zoom).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        color = when {
-            header -> MaterialTheme.colorScheme.surfaceVariant
-            focused -> MaterialTheme.colorScheme.secondaryContainer
-            else -> MaterialTheme.colorScheme.surface
-        }
+    Box(
+        Modifier
+            .width(width * zoom)
+            .heightIn(min = 44.dp * zoom)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .background(when {
+                footer -> MaterialTheme.colorScheme.primaryContainer
+                focused && header -> MaterialTheme.colorScheme.primaryContainer
+                focused -> MaterialTheme.colorScheme.secondaryContainer
+                tint != null -> tint
+                header -> MaterialTheme.colorScheme.surfaceVariant
+                else -> MaterialTheme.colorScheme.surface
+            })
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        contentAlignment = Alignment.CenterStart
     ) {
-        Text(value, Modifier.padding(horizontal = 7.dp, vertical = 8.dp),
-            fontWeight = if (header || bold) FontWeight.Bold else FontWeight.Normal,
-            style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(
+            value,
+            color = if (footer) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+            fontWeight = if (header || bold || footer) FontWeight.Bold else FontWeight.Normal,
+            fontSize = (14f * zoom).sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
+}
+
+private fun smsHistoryMonthTint(month: Int, dark: Boolean): Color = when ((month - 1) % 3) {
+    0 -> if (dark) Color(0xFF203A28) else Color(0xFFEAF6ED)
+    1 -> if (dark) Color(0xFF3B351F) else Color(0xFFFFF7DE)
+    else -> if (dark) Color(0xFF1D3740) else Color(0xFFE8F8FC)
+}
+
+private fun smsHistoryMonthHeaderTint(month: Int, dark: Boolean): Color = when ((month - 1) % 3) {
+    0 -> if (dark) Color(0xFF31553C) else Color(0xFFD5EBDD)
+    1 -> if (dark) Color(0xFF5A512D) else Color(0xFFFFEDB5)
+    else -> if (dark) Color(0xFF315764) else Color(0xFFD3F1F7)
 }
