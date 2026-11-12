@@ -309,9 +309,10 @@ jobs:
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_342.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_343.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_344.py")
-          echo "Applied v343 SMS History and MOM Conversion, Google Drive authorization fixes, owner-only ad exemption and Android v344 version bump."
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_345.py")
+          echo "Applied v343 SMS History and MOM Conversion, Google Drive authorization fixes, owner-only ad exemption, Loaded Report parity updates and Android v345 version bump."
 
-      - name: Verify Android v344 preserves v343 SMS History and MOM Conversion
+      - name: Verify Android v345 preserves v343 SMS History and MOM Conversion
         shell: bash
         run: |
           set -euo pipefail
@@ -336,8 +337,8 @@ jobs:
               raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
           if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
-          if not re.search(r'versionCode\s*=\s*344', gradle):
-              raise SystemExit("Android build must declare versionCode 344 after preserving the v343 baseline.")
+          if not re.search(r'versionCode\s*=\s*345', gradle):
+              raise SystemExit("Android build must declare versionCode 345 after preserving the v343 baseline.")
           if "allDailySnapshots" not in history or "SmsHistoryTableCell" not in history:
               raise SystemExit("SMS History is not routed to the report-style daily table.")
           if "DELETE FROM sms_checker_daily_results" not in store or "allDailySnapshots" not in store or "idx_sms_history_one_daily_result" not in store:
@@ -383,7 +384,7 @@ jobs:
               raise SystemExit("Owner exemption is not tied to the existing verified admin UID gate.")
           if "broadcastReleaseManager.isCurrentUserBroadcastAdmin()" not in source:
               raise SystemExit("Owner account is not exempted from in-app ads.")
-          print("Android v344 version, v343 SMS History, MOM Conversion, owner-only ad exemption, Online Reports API-key identity and Drive backup auth gates verified.")
+          print("Android v345 version, v343 SMS History, MOM Conversion, owner-only ad exemption, Online Reports API-key identity and Drive backup auth gates verified.")
           PY
 
       - name: Generate automated What's New release notes
