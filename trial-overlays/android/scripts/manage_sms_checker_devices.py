@@ -22,10 +22,20 @@ addition = '''
             codes = codes.filterNot { it.trim().uppercase(Locale.US) in normalized }
             records = records.filterKeys { it.trim().uppercase(Locale.US) !in normalized }
             persist()
+            if (selectedTab != 6) {
+                val updatedProfileCodes = savedMyDevices().filterNot { it.trim().uppercase(Locale.US) in normalized }
+                store.setSetting(SETTING_MY_DEVICES_CODES, updatedProfileCodes.joinToString("|"))
+                store.setSetting(SETTING_MY_DEVICES_SETUP, "true")
+                myDevicesDatabase.replaceCodes(updatedProfileCodes)
+                saveActiveProfileSnapshot(updatedProfileCodes)
+            }
             selectedSmsDeviceCodes.clear()
             showSmsDeviceManager = false
-            message = "Removed ${normalized.size} device${if (normalized.size == 1) "" else "s"} and permanently deleted its saved SMS history."
-            scope.launch(Dispatchers.IO) { activeSmsHistoryStore.deleteCodes(normalized) }
+            scope.launch {
+                runCatching { withContext(Dispatchers.IO) { activeSmsHistoryStore.deleteCodes(normalized) } }
+                    .onSuccess { message = "Removed ${normalized.size} device${if (normalized.size == 1) "" else "s"} and permanently deleted its saved SMS history." }
+                    .onFailure { message = "Devices were removed from the active list, but SMS History cleanup failed: ${it.message ?: "unknown error"}" }
+            }
         }
 
         fun renameSmsCheckerDevice(oldCode: String, newCodeRaw: String) {
