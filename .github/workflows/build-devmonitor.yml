@@ -199,6 +199,14 @@ jobs:
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
           echo "Selected Android ZIP: $ZIP_FILE"
 
+      - name: Preserve exact Android source ZIP used by this run
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Android-Source-ZIP-Input
+          path: ${{ env.ZIP_FILE }}
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Extract DevMonitor project
         shell: bash
         run: |
@@ -317,10 +325,12 @@ jobs:
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_344.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_345.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_346.py")
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/simplify_release_notes.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_347.py")
-          echo "Applied v343 SMS History and MOM Conversion, SMS History daily totals, Google Drive fixes, and bulk SMS device edit/delete with permanent history removal; Android v347."
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_348.py")
+          echo "Applied v343 SMS History and MOM Conversion, daily history totals, Drive diagnostics, bulk SMS device management, and concise user-facing release notes; Android v348."
 
-      - name: Verify Android v347 preserves v343 features and SMS device management
+      - name: Verify Android v348 preserves v343 features and SMS device management
         shell: bash
         run: |
           set -euo pipefail
@@ -345,8 +355,10 @@ jobs:
               raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
           if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
-          if not re.search(r'versionCode\s*=\s*347', gradle):
-              raise SystemExit("Android build must declare versionCode 347 after preserving the v343 baseline.")
+          if not re.search(r'versionCode\s*=\s*348', gradle):
+              raise SystemExit("Android build must declare versionCode 348 after preserving the v343 baseline.")
+          if source.count('whatsNewHighlights = listOf("Manage SMS Checker devices more easily, with improvements to reports and overall reliability.")') != 2:
+              raise SystemExit("Concise user-facing What's New message is missing from both update entry points.")
           if "allDailySnapshots" not in history or "SmsHistoryTableCell" not in history:
               raise SystemExit("SMS History is not routed to the report-style daily table.")
           if "DELETE FROM sms_checker_daily_results" not in store or "allDailySnapshots" not in store or "idx_sms_history_one_daily_result" not in store:
@@ -398,7 +410,7 @@ jobs:
               raise SystemExit("Owner exemption is not tied to the existing verified admin UID gate.")
           if "broadcastReleaseManager.isCurrentUserBroadcastAdmin()" not in source:
               raise SystemExit("Owner account is not exempted from in-app ads.")
-          print("Android v347 version, SMS device management, v343 SMS History and MOM Conversion, Loaded Report-style SMS daily totals, bounded Online Reports loading, owner-only ad exemption and Drive backup auth gates verified.")
+          print("Android v348 version, concise What's New message, SMS device management, v343 SMS History and MOM Conversion, Loaded Report-style SMS daily totals, bounded Online Reports loading, owner-only ad exemption and Drive backup auth gates verified.")
           PY
 
       - name: Generate automated What's New release notes
@@ -473,6 +485,11 @@ jobs:
             exit 1
           }
 
+      - name: Verify live Google Drive Online Reports folder access
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/verify_online_reports_live.py"
+
       - name: Verify Firebase package and release identity record
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
@@ -511,12 +528,15 @@ jobs:
               raise SystemExit("ERROR: Online Reports folder ID is missing, duplicated, or mismatched.")
 
           generated = list(Path("app/build/generated").rglob("BuildConfig.java"))
+          folder_id = "1d2mCmBiFgQXjIYHAvgjXAD_JgSvITbwI"
           if not any(
               "DRIVE_REPORT_API_KEY" in p.read_text(encoding="utf-8")
               and expected in p.read_text(encoding="utf-8")
+              and "DRIVE_REPORT_FOLDER_ID" in p.read_text(encoding="utf-8")
+              and folder_id in p.read_text(encoding="utf-8")
               for p in generated
           ):
-              raise SystemExit("ERROR: generated BuildConfig does not contain the configured Online Reports API key.")
+              raise SystemExit("ERROR: generated BuildConfig does not contain the configured Online Reports API key and company folder ID.")
 
           print("Online Reports folder ID and embedded API key verified in the generated release configuration.")
           PYCODE
@@ -606,6 +626,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Preserve exact Windows source ZIP used by this run
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Windows-Source-ZIP-Input
+          path: ${{ needs.detect.outputs.windows_zip }}
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Set up .NET 8
         uses: actions/setup-dotnet@v4
