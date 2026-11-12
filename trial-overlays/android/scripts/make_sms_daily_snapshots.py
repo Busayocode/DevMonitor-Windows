@@ -111,14 +111,9 @@ insert = """    /** Permanently remove all daily SMS history rows for the suppli
                     val recordJson = JSONObject(jsonText).put("code", newKey).toString()
                     db.delete("sms_checker_daily_results", "activity_date=? AND UPPER(code)=?",
                         arrayOf(date, newUpper))
-                    db.update(
-                        "sms_checker_daily_results",
-                        ContentValues().apply {
-                            put("code", newKey)
-                            put("record_json", recordJson)
-                        },
-                        "activity_date=? AND UPPER(code)=?",
-                        arrayOf(date, oldKey)
+                    db.execSQL(
+                        "UPDATE sms_checker_daily_results SET code=?,record_json=? WHERE activity_date=? AND UPPER(code)=?",
+                        arrayOf(newKey, recordJson, date, oldKey)
                     )
                 } else {
                     db.delete("sms_checker_daily_results", "activity_date=? AND UPPER(code)=?",
