@@ -72,7 +72,64 @@ elif "legacyHistory.sortedBy" not in s:
 
 # Return the latest daily snapshots as the source rows for the report-style table.
 anchor = """    /** All completed checks for one device/partner code during the retained two-month window. */"""
-insert = """    /** Latest saved result for each device/date in the retained two-month window. */
+insert = """    /** Permanently remove all daily SMS history rows for the supplied device/trade codes. */
+    fun deleteCodes(codes: Set<String>) {
+        val normalized = codes.map { canonicalDeviceCode(it).uppercase(java.util.Locale.US) }.filter { it.isNotBlank() }.toSet()
+        if (normalized.isEmpty()) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            normalized.forEach { code ->
+                db.delete("sms_checker_daily_results", "UPPER(code)=?", arrayOf(code))
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    /** Rename a device key in its history, retaining the newest result if the destination already has that day. */
+    fun renameCode(oldCode: String, newCode: String) {
+        val oldKey = canonicalDeviceCode(oldCode).uppercase(java.util.Locale.US)
+        val newKey = canonicalDeviceCode(newCode)
+        val newUpper = newKey.uppercase(java.util.Locale.US)
+        if (oldKey.isBlank() || newUpper.isBlank() || oldKey == newUpper) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val rows = mutableListOf<Triple<String, Long, String>>()
+            db.rawQuery(
+                "SELECT activity_date,completed_at,record_json FROM sms_checker_daily_results WHERE UPPER(code)=?",
+                arrayOf(oldKey)
+            ).use { cursor ->
+                while (cursor.moveToNext()) rows.add(Triple(cursor.getString(0), cursor.getLong(1), cursor.getString(2)))
+            }
+            rows.forEach { (date, completedAt, jsonText) ->
+                val existing = db.rawQuery(
+                    "SELECT completed_at FROM sms_checker_daily_results WHERE activity_date=? AND UPPER(code)=?",
+                    arrayOf(date, newUpper)
+                ).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else null }
+                if (existing == null || completedAt >= existing) {
+                    val recordJson = JSONObject(jsonText).put("code", newKey).toString()
+                    db.delete("sms_checker_daily_results", "activity_date=? AND UPPER(code)=?",
+                        arrayOf(date, newUpper))
+                    db.update(
+                        "sms_checker_daily_results",
+                        ContentValues().apply {
+                            put("code", newKey)
+                            put("record_json", recordJson)
+                        },
+                        "activity_date=? AND UPPER(code)=?",
+                        arrayOf(date, oldKey)
+                    )
+                } else {
+                    db.delete("sms_checker_daily_results", "activity_date=? AND UPPER(code)=?",
+                        arrayOf(date, oldKey))
+                }
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    /** Latest saved result for each device/date in the retained two-month window. */
     fun allDailySnapshots(): List<SmsCheckerHistoryEvent> {
         pruneOldMonths(writableDatabase)
         val out = mutableListOf<SmsCheckerHistoryEvent>()
