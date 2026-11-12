@@ -309,14 +309,18 @@ jobs:
           cp "$MAIN" MainActivity.kt
           python3 "$OWNER_AD_PATCH"
           cp MainActivity.kt "$MAIN"
+          DEVICE_MANAGER_PATCH="trial-overlays/android/scripts/manage_sms_checker_devices.py"
+          test -f "$DEVICE_MANAGER_PATCH"
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/$DEVICE_MANAGER_PATCH")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_342.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_343.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_344.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_345.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_346.py")
-          echo "Applied v343 SMS History and MOM Conversion, SMS History table polish and daily totals, Google Drive authorization/loading fixes, owner-only ad exemption and Android v346 version bump."
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_347.py")
+          echo "Applied v343 SMS History and MOM Conversion, SMS History daily totals, Google Drive fixes, and bulk SMS device edit/delete with permanent history removal; Android v347."
 
-      - name: Verify Android v346 preserves v343 SMS History and MOM Conversion
+      - name: Verify Android v347 preserves v343 features and SMS device management
         shell: bash
         run: |
           set -euo pipefail
@@ -342,7 +346,7 @@ jobs:
           if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
           if not re.search(r'versionCode\s*=\s*346', gradle):
-              raise SystemExit("Android build must declare versionCode 346 after preserving the v343 baseline.")
+              raise SystemExit("Android build must declare versionCode 347 after preserving the v343 baseline.")
           if "allDailySnapshots" not in history or "SmsHistoryTableCell" not in history:
               raise SystemExit("SMS History is not routed to the report-style daily table.")
           if "DELETE FROM sms_checker_daily_results" not in store or "allDailySnapshots" not in store or "idx_sms_history_one_daily_result" not in store:
@@ -394,7 +398,7 @@ jobs:
               raise SystemExit("Owner exemption is not tied to the existing verified admin UID gate.")
           if "broadcastReleaseManager.isCurrentUserBroadcastAdmin()" not in source:
               raise SystemExit("Owner account is not exempted from in-app ads.")
-          print("Android v346 version, v343 SMS History and MOM Conversion, Loaded Report-style SMS daily totals, bounded Online Reports loading, owner-only ad exemption and Drive backup auth gates verified.")
+          print("Android v347 version, SMS device management, v343 SMS History and MOM Conversion, Loaded Report-style SMS daily totals, bounded Online Reports loading, owner-only ad exemption and Drive backup auth gates verified.")
           PY
 
       - name: Generate automated What's New release notes
