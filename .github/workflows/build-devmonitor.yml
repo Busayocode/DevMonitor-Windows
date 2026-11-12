@@ -341,7 +341,7 @@ jobs:
               raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
           if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
-          if not re.search(r'versionCode\\s*=\\s*346', gradle):
+          if not re.search(r'versionCode\s*=\s*346', gradle):
               raise SystemExit("Android build must declare versionCode 346 after preserving the v343 baseline.")
           if "allDailySnapshots" not in history or "SmsHistoryTableCell" not in history:
               raise SystemExit("SMS History is not routed to the report-style daily table.")
