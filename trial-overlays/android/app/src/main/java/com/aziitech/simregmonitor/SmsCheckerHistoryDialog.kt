@@ -57,6 +57,7 @@ fun SmsCheckerHistoryDialog(
     var showViewOptions by remember { mutableStateOf(false) }
     var showSummary by remember { mutableStateOf(false) }
     var showHierarchy by remember { mutableStateOf(false) }
+    var showDeviceDetails by remember { mutableStateOf(false) }
     var additionalRowsToShow by remember { mutableIntStateOf(0) }
 
     val visibleDates = remember(allDates, dateScope, currentMonth, previousMonth) {
@@ -187,7 +188,7 @@ fun SmsCheckerHistoryDialog(
                         Text("Rows", fontWeight = FontWeight.Bold)
                         listOf("All", "Activity", "Zero").forEach { option ->
                             Row(Modifier.fillMaxWidth().clickable { rowView = option }.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(rowView == option, { rowView = option })
+                                RadioButton(rowView == option, { rowView = option; additionalRowsToShow = 0 })
                                 Text(when (option) { "Activity" -> "Only rows with Today activity"; "Zero" -> "Only zero-activity rows"; else -> "All rows" })
                             }
                         }
@@ -251,6 +252,47 @@ fun SmsCheckerHistoryDialog(
         )
     }
 
+    if (showDeviceDetails && selectedCode != null) {
+        val detailEvents = events.filter { canonicalDeviceCode(it.record.code) == selectedCode }
+            .sortedByDescending { it.completedAt }
+        AlertDialog(
+            onDismissRequest = { showDeviceDetails = false },
+            title = { Text("History for $selectedCode") },
+            text = {
+                Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (detailEvents.isEmpty()) {
+                        Text("No saved daily results are available for this code.")
+                    } else {
+                        detailEvents.forEach { event ->
+                            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text(event.activityDate, fontWeight = FontWeight.Bold)
+                                        Text(event.record.status.name.replace('_', ' '), fontWeight = FontWeight.Bold)
+                                    }
+                                    Text(SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(event.completedAt)) + " • Attempt " + event.record.attempt,
+                                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    event.record.result?.let { result ->
+                                        Text(listOfNotNull(
+                                            result.today?.let { "Today $it" }, result.mtd?.let { "MTD $it" },
+                                            result.active?.let { "Active $it" }, result.bar48?.let { "Bar48 $it" },
+                                            result.bar96?.let { "Bar96 $it" }, result.duplicates?.let { "Duplicates $it" },
+                                            result.monthlyTarget?.let { "Target $it" }
+                                        ).joinToString(" • "), style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    event.record.error?.takeIf { it.isNotBlank() }?.let {
+                                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showDeviceDetails = false }) { Text("Done") } }
+        )
+    }
+
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -303,7 +345,10 @@ fun SmsCheckerHistoryDialog(
                 if (selectedCode != null) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("Selected: $selectedCode", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        TextButton(onClick = { selectedCode = null }) { Text("Clear selection") }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { showDeviceDetails = true }) { Text("View details") }
+                            TextButton(onClick = { selectedCode = null }) { Text("Clear selection") }
+                        }
                     }
                 }
                 if (initialDeviceCode != null && query.isNotBlank()) {
@@ -328,7 +373,7 @@ fun SmsCheckerHistoryDialog(
                             val focused = selectedCode == row.code
                             Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
                                 visibleFixed.firstOrNull { it.key == "DEVICE" }?.let { deviceColumn ->
-                                    SmsHistoryTableCell(if (showShortCode) canonicalDeviceCode(latest?.record?.code ?: row.code) else (latest?.record?.code ?: row.code), deviceColumn.width, focused, tableZoom, bold = true) { selectedCode = row.code }
+                                    SmsHistoryTableCell(if (showShortCode) canonicalDeviceCode(latest?.record?.code ?: row.code) else (latest?.record?.code ?: row.code), deviceColumn.width, focused, tableZoom, bold = true) { selectedCode = row.code; showDeviceDetails = true }
                                 }
                                 Row(Modifier.weight(1f).horizontalScroll(tableScroll).clickable { selectedCode = row.code }) {
                                     visibleFixed.filterNot { it.key == "DEVICE" }.forEach { column ->
