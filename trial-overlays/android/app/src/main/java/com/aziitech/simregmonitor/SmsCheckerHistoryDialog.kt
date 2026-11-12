@@ -126,6 +126,7 @@ fun SmsCheckerHistoryDialog(
 
     val listState = rememberLazyListState()
     val tableScroll = rememberScrollState()
+    val showShortCode by remember { derivedStateOf { tableScroll.value > 8 } }
     var tableHeaderIndex by remember { mutableIntStateOf(-1) }
     LaunchedEffect(listState) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "sms_history_table_header" }?.index }
@@ -327,7 +328,7 @@ fun SmsCheckerHistoryDialog(
                             val focused = selectedCode == row.code
                             Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
                                 visibleFixed.firstOrNull { it.key == "DEVICE" }?.let { deviceColumn ->
-                                    SmsHistoryTableCell(row.code, deviceColumn.width, focused, tableZoom, bold = true) { selectedCode = row.code }
+                                    SmsHistoryTableCell(if (showShortCode) canonicalDeviceCode(latest?.record?.code ?: row.code) else (latest?.record?.code ?: row.code), deviceColumn.width, focused, tableZoom, bold = true) { selectedCode = row.code }
                                 }
                                 Row(Modifier.weight(1f).horizontalScroll(tableScroll).clickable { selectedCode = row.code }) {
                                     visibleFixed.filterNot { it.key == "DEVICE" }.forEach { column ->
