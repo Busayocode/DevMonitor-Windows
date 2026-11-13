@@ -114,6 +114,22 @@ BEGIN
         RETURN;
     END IF;
 
+    -- Completed/failed/previously cancelled requests are terminal; do not
+    -- record a misleading new cancellation request after the work has ended.
+    IF batch_row.status IN ('COMPLETED','PARTIAL','FAILED','CANCELLED') THEN
+        RETURN QUERY
+        SELECT TRUE,b.status,
+               count(j.id),
+               count(j.id) FILTER (WHERE j.state='COMPLETED'),
+               count(j.id) FILTER (WHERE j.state='CANCELLED'),
+               count(j.id) FILTER (WHERE j.state IN ('SENDING','AWAITING_REPLY','AMBIGUOUS','LEASED'))
+          FROM dm_check_batches b
+          LEFT JOIN dm_check_jobs j ON j.batch_id=b.id
+         WHERE b.id=p_batch_id
+         GROUP BY b.status;
+        RETURN;
+    END IF;
+
     IF batch_row.cancellation_requested_at IS NULL THEN
         UPDATE dm_check_batches
            SET cancellation_requested_at=now(),
