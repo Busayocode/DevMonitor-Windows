@@ -91,6 +91,10 @@ def test_firebase_id_token_verifies_project_and_uid():
 
 def test_firebase_id_token_rejects_wrong_project_audience():
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    token = _firebase_test_token(private_key, audience="another-project")
+    token = _firebase_test_token(
+        private_key,
+        audience="another-project",
+        issuer="https://securetoken.google.com/fieldpulse-test",
+    )
     with pytest.raises(jwt.InvalidAudienceError):
         verify_firebase_id_token(token, "fieldpulse-test", FakeJwksClient(private_key.public_key()))
