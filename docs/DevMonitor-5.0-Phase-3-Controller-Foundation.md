@@ -1,7 +1,7 @@
 # DevMonitor 5.0 — Phase 3 Controller Foundation
 
 **Branch:** `devmonitor-5.0-foundation`  
-**Status:** PostgreSQL schema and OpenAPI reference committed; not deployed or database-tested.  
+**Status:** PostgreSQL schema, OpenAPI contract and reference FastAPI service committed; CI database-tested, not deployed.  
 **Production impact:** None. No release ZIP, Full edition, Gateway client, main branch, Firebase project or live SMS workflow was changed.
 
 ## Objective
@@ -54,11 +54,11 @@ A small transport grace period is added to the server lease. This does not chang
 
 ### 5. HTTP contract
 
-The OpenAPI draft defines:
+The OpenAPI contract and reference handlers cover:
 - Client batch submission and progress retrieval.
 - Latest cached result and history retrieval.
 - Personal gateway registration and owner-controlled pool participation.
-- Gateway health heartbeat, job claim, send-state acknowledgement and result submission.
+- Gateway health heartbeat, active-attempt recovery metadata, job claim, send-state acknowledgement, definitive pre-transmission failure and result submission.
 
 ## Security requirements
 
@@ -72,7 +72,7 @@ The OpenAPI draft defines:
 
 ## What is not yet implemented
 
-- No live HTTPS service or API handlers.
+- No deployed HTTPS service. The reference FastAPI handlers are source-only and still require environment configuration, deployment hardening and integration tests.
 - No selected identity provider or production authentication configuration.
 - No PostgreSQL instance, hosting provider, cloud project or paid service has been provisioned.
 - GitHub Actions run [#10](https://github.com/Busayocode/DevMonitor-Windows/actions/runs/43427348246) successfully applied V001–V006 to PostgreSQL 16 and passed the first database smoke suite. The suite exercised personal gateway priority, reservation from pool workers, tenant round-robin, result persistence, safe pre-send requeue, post-send ambiguity/quarantine and operator recovery. A follow-up stale-cache test is now being added.
@@ -83,7 +83,7 @@ The OpenAPI draft defines:
 
 ## Required validation before phone integration
 
-1. Apply V001–V006 to a clean PostgreSQL instance and verify migration success.
+1. Apply V001–V007 to a clean PostgreSQL instance and verify migration success.
 2. Test two or more workers concurrently claiming the same tenant queue; no duplicate job claim may occur.
 3. Test tenant fairness with one large batch and one smaller batch.
 4. Test personal owner priority, personal-only mode and pool opt-in/out.
