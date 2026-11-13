@@ -62,6 +62,8 @@ BEGIN
      GROUP BY t.id;
 
     GET DIAGNOSTICS inserted_count = ROW_COUNT;
+    DELETE FROM dm_tenant_queue_snapshots
+     WHERE captured_at < now()-INTERVAL '90 days';
     RETURN inserted_count;
 END;
 $$;
