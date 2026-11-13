@@ -18,9 +18,9 @@ class GatewayControllerClient(
     private val signer: FirebaseBearerRequestSigner,
     private val http: OkHttpClient = OkHttpClient()
 ) {
-    private val root = baseUrl.trim().toHttpUrlOrNull()
-        ?: throw IllegalArgumentException("Enter a valid controller URL")
-        .also { /* validated below */ }
+    private val root = requireNotNull(baseUrl.trim().toHttpUrlOrNull()) {
+        "Enter a valid controller URL"
+    }
 
     init {
         require(root.isHttps) { "Gateway controller must use HTTPS" }
