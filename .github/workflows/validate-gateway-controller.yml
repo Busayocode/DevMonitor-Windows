@@ -50,7 +50,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
-          python -m pip install --user pyyaml
+          python -m pip install --user pyyaml -r controller/service/requirements.txt
 
       - name: Validate OpenAPI YAML structure and duplicate keys
         run: |
@@ -86,6 +86,11 @@ jobs:
           assert "GatewayBearerAuth" in spec["components"]["securitySchemes"]
           print("OpenAPI YAML structure passed.")
           PY
+
+      - name: Compile and test controller HTTP service
+        run: |
+          PYTHONPATH=controller/service python -m compileall -q controller/service
+          PYTHONPATH=controller/service python -m pytest -q controller/service/tests
 
       - name: Wait for PostgreSQL
         run: |
