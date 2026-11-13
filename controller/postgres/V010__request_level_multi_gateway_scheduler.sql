@@ -40,10 +40,9 @@ BEGIN
                count(*) OVER () AS gateway_count
           FROM gateway_load
     ),
-    pending AS (
+    pending_base AS (
         SELECT b.id,b.tenant_id,b.requested_by_user_id,
-               pref.preferred_gateway_id,
-               row_number() OVER (ORDER BY b.created_at,b.id)-1 AS batch_slot
+               pref.preferred_gateway_id,b.created_at
           FROM dm_check_batches b
           LEFT JOIN LATERAL (
               SELECT min(j.preferred_gateway_id::text)::uuid AS preferred_gateway_id
@@ -61,22 +60,42 @@ BEGIN
                   AND j.state IN ('LEASED','SENDING','AWAITING_REPLY')
            )
     ),
-    targets AS (
-        SELECT p.id AS batch_id,
-               COALESCE(owned.id,shared.id) AS target_gateway_id
-          FROM pending p
-          LEFT JOIN dm_gateways owned
+    personal_targets AS (
+        SELECT p.id AS batch_id,owned.id AS target_gateway_id
+          FROM pending_base p
+          JOIN dm_gateways owned
             ON owned.id=p.preferred_gateway_id
            AND owned.owner_user_id=p.requested_by_user_id
            AND owned.health_state='READY'
            AND owned.revoked_at IS NULL
            AND owned.heartbeat_at >= now()-INTERVAL '90 seconds'
            AND owned.sms_permission_ready AND owned.telephony_ready AND owned.network_ready
-          LEFT JOIN pool shared
-            ON shared.gateway_slot = (
-                p.batch_slot % NULLIF((SELECT count(*) FROM pool),0)
-            )
-         WHERE owned.id IS NOT NULL OR shared.id IS NOT NULL
+    ),
+    shared_pending AS (
+        SELECT p.id,
+               row_number() OVER (ORDER BY p.created_at,p.id)-1 AS batch_slot
+          FROM pending_base p
+         WHERE NOT EXISTS (
+             SELECT 1 FROM dm_gateways owned
+              WHERE owned.id=p.preferred_gateway_id
+                AND owned.owner_user_id=p.requested_by_user_id
+                AND owned.health_state='READY'
+                AND owned.revoked_at IS NULL
+                AND owned.heartbeat_at >= now()-INTERVAL '90 seconds'
+                AND owned.sms_permission_ready AND owned.telephony_ready AND owned.network_ready
+         )
+    ),
+    shared_targets AS (
+        SELECT p.id AS batch_id,
+               g.id AS target_gateway_id
+          FROM shared_pending p
+          JOIN pool g
+            ON g.gateway_slot = (p.batch_slot % NULLIF((SELECT count(*) FROM pool),0))
+    ),
+    targets AS (
+        SELECT batch_id,target_gateway_id FROM personal_targets
+        UNION ALL
+        SELECT batch_id,target_gateway_id FROM shared_targets
     ),
     changed AS (
         UPDATE dm_check_batches b
