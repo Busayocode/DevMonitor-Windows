@@ -8,7 +8,7 @@ This is the reference FastAPI service for the DevMonitor 5.0 controller. It is s
 2. Apply the migrations in `../postgres/` in numeric order, V001 through V008.
 3. Copy `.env.example` to a private environment file and set:
    - `DATABASE_URL` to the controller database.
-   - `OIDC_ISSUER`, `OIDC_AUDIENCE` and `OIDC_JWKS_URL` to the selected identity provider.
+   - `FIREBASE_PROJECT_ID` to the exact Project ID shown in Firebase Console > Project settings > General.
 4. Install `requirements.txt`.
 5. Start with `uvicorn app:app --app-dir controller/service --host 127.0.0.1 --port 8000`.
 
@@ -16,12 +16,13 @@ Do not expose the development server directly to the public internet. A deployme
 
 ## Authentication
 
-- User routes require a JWT whose signature, issuer, audience, expiry and subject are verified against the configured OIDC JWKS.
+- User routes require a Firebase Authentication ID token. The controller verifies its RS256 signature using Google's Secure Token public keys and checks the exact Firebase project ID as audience, the matching `https://securetoken.google.com/<projectId>` issuer, expiry, issued-at time, authentication time and UID.
+- The Firebase project must have Firebase Authentication enabled and at least one sign-in provider configured. The Android client signs in with Firebase and sends its current ID token as the bearer token. The controller does not accept Google OAuth access tokens or Drive tokens as substitutes.
 - Gateway routes require the random 256-bit installation token returned once by personal gateway registration. Only its SHA-256 hash is stored in PostgreSQL.
 - A revoked gateway token is rejected even if that phone continues to heartbeat.
 - There is no development bypass or unauthenticated mode for client/gateway routes. `/health` exposes only basic service readiness.
 
-The identity provider has deliberately not been selected or provisioned. The service accepts a generic OIDC configuration; it does not assume that the existing DevMonitor Firebase project has Firebase Authentication enabled.
+Firebase Authentication is the selected identity provider. The existing `Fieldpulse` project is the intended project, but its Firebase Authentication status and sign-in providers still need to be checked in Firebase Console. No Firebase project settings have been changed by this source-code update. The project ID must be supplied through deployment configuration; no service-account private key is needed for this ID-token signature verification path.
 
 ## Runtime behaviour
 
