@@ -59,7 +59,7 @@ BEGIN
     END LOOP;
 
     PERFORM dm_rebalance_unstarted_batches();
-    IF EXISTS (SELECT 1 FROM dm_check_batches WHERE id=ANY(batch_ids) AND assigned_gateway_id<>gateway_a) THEN
+    IF EXISTS (SELECT 1 FROM dm_check_batches WHERE id=ANY(batch_ids) AND assigned_gateway_id IS DISTINCT FROM gateway_a) THEN
         RAISE EXCEPTION 'single eligible Gateway should initially own all five queued requests';
     END IF;
 
