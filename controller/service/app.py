@@ -22,9 +22,8 @@ from psycopg_pool import ConnectionPool
 from jwt import PyJWKClient
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-OIDC_ISSUER = os.getenv("OIDC_ISSUER")
-OIDC_AUDIENCE = os.getenv("OIDC_AUDIENCE")
-OIDC_JWKS_URL = os.getenv("OIDC_JWKS_URL")
+FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
+FIREBASE_SECURE_TOKEN_JWKS_URL = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
 
 logger = logging.getLogger('devmonitor.gateway.controller')
 db_pool: ConnectionPool | None = None
@@ -64,8 +63,8 @@ async def lifespan(_: FastAPI):
         )
         db_pool.open(wait=True)
         reaper_task = asyncio.create_task(expired_lease_reaper())
-    if OIDC_JWKS_URL:
-        jwks_client = PyJWKClient(OIDC_JWKS_URL, cache_keys=True)
+    if FIREBASE_PROJECT_ID:
+        jwks_client = PyJWKClient(FIREBASE_SECURE_TOKEN_JWKS_URL, cache_keys=True)
     try:
         yield
     finally:
@@ -81,7 +80,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="DevMonitor Gateway Controller",
     version="0.1.0",
-    description="Reference controller API. Configure PostgreSQL and an OIDC identity provider before use.",
+    description="Reference controller API. Configure PostgreSQL and Firebase Authentication before use.",
     lifespan=lifespan,
 )
 
@@ -204,28 +203,39 @@ def bearer_token(credentials: HTTPAuthorizationCredentials | None, detail: str) 
     return credentials.credentials
 
 
+def verify_firebase_id_token(token: str, project_id: str, key_client: PyJWKClient) -> dict[str, Any]:
+    """Verify a Firebase Authentication ID token for exactly one Firebase project."""
+    issuer = f"https://securetoken.google.com/{project_id}"
+    signing_key = key_client.get_signing_key_from_jwt(token).key
+    claims = jwt.decode(
+        token,
+        signing_key,
+        algorithms=["RS256"],
+        issuer=issuer,
+        audience=project_id,
+        options={"require": ["exp", "iat", "sub", "auth_time"]},
+    )
+    subject = claims.get("sub")
+    auth_time = claims.get("auth_time")
+    if not isinstance(subject, str) or not subject or len(subject) > 128:
+        raise ValueError("Firebase token has an invalid UID")
+    if not isinstance(auth_time, int) or auth_time <= 0:
+        raise ValueError("Firebase token has an invalid authentication time")
+    return claims
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(user_bearer),
     connection=Depends(get_db),
 ) -> dict[str, Any]:
     token = bearer_token(credentials, "User authentication required")
-    if not (OIDC_ISSUER and OIDC_AUDIENCE and jwks_client):
-        raise HTTPException(status_code=503, detail="OIDC identity provider is not configured")
+    if not (FIREBASE_PROJECT_ID and jwks_client):
+        raise HTTPException(status_code=503, detail="Firebase Authentication is not configured")
     try:
-        signing_key = jwks_client.get_signing_key_from_jwt(token).key
-        claims = jwt.decode(
-            token,
-            signing_key,
-            algorithms=["RS256", "ES256"],
-            issuer=OIDC_ISSUER,
-            audience=OIDC_AUDIENCE,
-            options={"require": ["exp", "iat", "sub"]},
-        )
+        claims = verify_firebase_id_token(token, FIREBASE_PROJECT_ID, jwks_client)
     except Exception as exc:
-        raise HTTPException(status_code=401, detail="Invalid user access token") from exc
-    subject = claims.get("sub")
-    if not isinstance(subject, str) or not subject:
-        raise HTTPException(status_code=401, detail="User token has no subject")
+        raise HTTPException(status_code=401, detail="Invalid Firebase ID token") from exc
+    subject = claims["sub"]
     with connection.transaction():
         row = connection.execute(
             """
