@@ -288,7 +288,7 @@ BEGIN
     PERFORM dm_rebalance_unstarted_batches();
     RETURN TRUE;
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION dm_revoke_personal_gateway(
     p_owner_user_id UUID,
@@ -307,6 +307,6 @@ BEGIN
     PERFORM dm_rebalance_unstarted_batches();
     RETURN TRUE;
 END;
-$;
+$$;
 
 COMMIT;
