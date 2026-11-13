@@ -144,6 +144,11 @@ BEGIN
          WHERE tenant_id=tenant_a ORDER BY captured_at DESC,id DESC LIMIT 1) <> 84 THEN
         RAISE EXCEPTION 'queue analytics snapshot did not record 84 remaining devices';
     END IF;
+    PERFORM dm_capture_tenant_queue_snapshots();
+    IF (SELECT count(*) FROM dm_tenant_queue_snapshots
+         WHERE tenant_id=tenant_a AND snapshot_minute=date_trunc('minute',now())) <> 1 THEN
+        RAISE EXCEPTION 'queue snapshots were duplicated within the same minute';
+    END IF;
 
     -- Gateway B goes unavailable. Its pre-send leased request is held until the
     -- lease is safely reaped; unstarted request 4 is immediately reassigned to A.
