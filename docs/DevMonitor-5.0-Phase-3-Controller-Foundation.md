@@ -32,7 +32,7 @@ The database claim function:
 - Enforces one unresolved SMS attempt per physical gateway.
 - Checks personal owner work before shared-pool work.
 - Keeps owner-preferred jobs reserved while their personal gateway is healthy.
-- Uses two-level round-robin state: rotate tenants, then rotate requesters within the selected tenant.
+- V008 introduced two-level per-device round-robin state. V010 supersedes that dispatch policy with request-level FIFO batches distributed across healthy eligible Gateways; the older cursor tables remain for migration compatibility but are no longer used by the active claim function.
 - Locks selected queue rows so two gateways cannot claim the same job.
 
 ### 3. Safe failure handling
@@ -84,10 +84,10 @@ The OpenAPI contract and reference handlers cover:
 
 ## Required validation before phone integration
 
-1. Apply V001–V008 to a clean PostgreSQL instance and verify migration success.
+1. Apply V001–V010 to a clean PostgreSQL instance and verify migration success.
 2. Test two or more workers concurrently claiming the same tenant queue; no duplicate job claim may occur.
-3. Test tenant fairness with one large batch and one smaller batch.
-4. Test personal owner priority, personal-only mode and pool opt-in/out.
+3. Test request-level FIFO ordering and round-robin distribution of whole request batches across multiple Gateways.
+4. Test personal owner priority, personal-only mode, pool opt-in/out and request-level Gateway reassignment.
 5. Test a preferred gateway going offline and safe shared-pool failover.
 6. Test lease expiry before send versus after send.
 7. Test late replies, stale lease tokens, duplicate result submissions and delayed older results.
