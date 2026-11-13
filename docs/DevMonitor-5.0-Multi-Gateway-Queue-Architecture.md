@@ -1,7 +1,7 @@
 # DevMonitor 5.0 — Multi-Gateway Queue, Wait Estimates, Cancellation and Analytics
 
 **Branch:** `devmonitor-5.0-foundation`  
-**Status:** Controller scheduler, queue/cancellation/analytics endpoints and database migrations are implemented on the foundation branch; CI validation and live operation remain pending.  
+**Status:** Controller scheduler, queue/cancellation/analytics endpoints and database migrations are implemented on the foundation branch; Controller CI validation passed (workflow run #43511984083); live operation and Android client integration remain pending.  
 **Scope:** Gateway controller and Gateway/Full edition client integration. This document does not authorize deployment, paid infrastructure, changes to the Full edition release, or merging into `main`.
 
 ## 1. Core model: one logical queue, multiple physical gateways
