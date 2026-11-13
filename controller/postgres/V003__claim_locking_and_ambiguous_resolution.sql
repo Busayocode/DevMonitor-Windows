@@ -180,9 +180,14 @@ $$;
 
 -- Device entitlements must be active at the database boundary, not only in API code.
 CREATE OR REPLACE FUNCTION dm_validate_active_device_access()
-RETURNS TRIGGER LANGUAGE plpgsql AS $
+RETURNS TRIGGER LANGUAGE plpgsql AS $function$
 DECLARE access_state_value TEXT;
 BEGIN
+    IF TG_OP = 'UPDATE'
+       AND OLD.tenant_id = NEW.tenant_id
+       AND OLD.canonical_device_id = NEW.canonical_device_id THEN
+        RETURN NEW;
+    END IF;
     SELECT access_state INTO access_state_value
       FROM dm_tenant_device_access
      WHERE tenant_id = NEW.tenant_id
@@ -193,7 +198,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$;
+$function$;
 
 DROP TRIGGER IF EXISTS dm_check_job_active_device_access ON dm_check_jobs;
 CREATE TRIGGER dm_check_job_active_device_access
