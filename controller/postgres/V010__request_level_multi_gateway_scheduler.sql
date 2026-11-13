@@ -1,6 +1,13 @@
 -- DevMonitor 5.0 - request-level FIFO distribution across multiple Gateway workers.
 BEGIN;
 
+ALTER TABLE dm_gateways
+    ADD COLUMN IF NOT EXISTS ready_since TIMESTAMPTZ;
+
+UPDATE dm_gateways
+   SET ready_since=COALESCE(heartbeat_at,created_at)
+ WHERE health_state='READY' AND ready_since IS NULL;
+
 ALTER TABLE dm_check_batches
     ADD COLUMN IF NOT EXISTS assigned_gateway_id UUID REFERENCES dm_gateways(id),
     ADD COLUMN IF NOT EXISTS assignment_updated_at TIMESTAMPTZ,
@@ -29,7 +36,7 @@ RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE changed_count INTEGER;
 BEGIN
     WITH gateway_load AS (
-        SELECT g.id,g.created_at,
+        SELECT g.id,g.ready_since,g.created_at,
                count(DISTINCT b.id) FILTER (
                    WHERE b.processing_started_at IS NOT NULL
                      AND EXISTS (
@@ -45,11 +52,11 @@ BEGIN
            AND g.heartbeat_at >= now()-INTERVAL '90 seconds'
            AND g.sms_permission_ready AND g.telephony_ready AND g.network_ready
            AND g.accept_pool_jobs
-         GROUP BY g.id,g.created_at
+         GROUP BY g.id,g.ready_since,g.created_at
     ),
     pool AS (
         SELECT id,
-               row_number() OVER (ORDER BY active_batches,created_at,id)-1 AS gateway_slot,
+               row_number() OVER (ORDER BY active_batches,ready_since NULLS LAST,created_at,id)-1 AS gateway_slot,
                count(*) OVER () AS gateway_count
           FROM gateway_load
     ),
