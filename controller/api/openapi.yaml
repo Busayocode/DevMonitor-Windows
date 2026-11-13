@@ -166,6 +166,20 @@ paths:
       responses:
         "200": { description: Pool preference updated for an owned gateway. }
         "404": { description: Gateway is not owned by the authenticated user. }
+  /v1/client/gateways/{gateway_id}:
+    delete:
+      tags: [Personal gateways]
+      summary: Revoke and unpair an owned personal gateway
+      security:
+        - UserBearerAuth: []
+      parameters:
+        - in: path
+          name: gateway_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Credential revoked; an active SMS transaction is resolved safely and no new jobs are assigned. }
+        "404": { description: Gateway is not owned by the authenticated user. }
   /v1/gateway/heartbeat:
     post:
       tags: [Gateway worker]
