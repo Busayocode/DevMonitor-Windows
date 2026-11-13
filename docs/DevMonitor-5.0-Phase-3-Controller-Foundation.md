@@ -75,8 +75,8 @@ The OpenAPI draft defines:
 - No live HTTPS service or API handlers.
 - No selected identity provider or production authentication configuration.
 - No PostgreSQL instance, hosting provider, cloud project or paid service has been provisioned.
-- No migration has yet been executed against a PostgreSQL server.
-- No automated database integration or concurrency test has run.
+- GitHub Actions run [#10](https://github.com/Busayocode/DevMonitor-Windows/actions/runs/43427348246) successfully applied V001–V006 to PostgreSQL 16 and passed the first database smoke suite. The suite exercised personal gateway priority, reservation from pool workers, tenant round-robin, result persistence, safe pre-send requeue, post-send ambiguity/quarantine and operator recovery. A follow-up stale-cache test is now being added.
+- Cross-process contention/load tests, identity-provider tests, full restart recovery and live gateway-phone tests have not yet run.
 - No Android Gateway Phone App or Gateway Edition client is connected.
 - No SMS has been sent.
 - No production permission, manifest or build changes have been made.
