@@ -121,10 +121,10 @@ BEGIN
     -- Once a request has started, a normal rebalance between SMS attempts must
     -- keep the remaining devices on that Gateway while it remains healthy.
     accepted := dm_mark_attempt_sending(gateway_a,claim_row.job_id,claim_row.attempt_id,claim_row.lease_token);
-    IF NOT accepted THEN RAISE EXCEPTION 'could not mark Gateway A's first request sending'; END IF;
+    IF NOT accepted THEN RAISE EXCEPTION 'could not mark Gateway A first request sending'; END IF;
     accepted := dm_mark_attempt_awaiting_reply(gateway_a,claim_row.job_id,claim_row.attempt_id,
                                                claim_row.lease_token,now(),120);
-    IF NOT accepted THEN RAISE EXCEPTION 'could not await Gateway A's first request reply'; END IF;
+    IF NOT accepted THEN RAISE EXCEPTION 'could not await Gateway A first request reply'; END IF;
     accepted := dm_complete_job_result(
         gateway_a,claim_row.job_id,claim_row.attempt_id,claim_row.lease_token,
         CURRENT_DATE,now(),now(),
