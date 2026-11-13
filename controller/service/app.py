@@ -157,6 +157,11 @@ class SendFailureRequest(AttemptRequest):
     failure_code: str = Field(min_length=1, max_length=100)
 
 
+class CancellationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str | None = Field(default=None, max_length=240)
+
+
 def require_database() -> ConnectionPool:
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Controller database is not configured")
@@ -399,6 +404,10 @@ def create_check_batch(
                     item.query_profile, body.preferred_gateway_id,
                 ),
             )
+
+        # Allocate the complete request as a unit across currently ready Gateways.
+        # The database function is deterministic and safe to call more than once.
+        connection.execute("SELECT dm_rebalance_unstarted_batches()")
 
     return JSONResponse(
         status_code=202,
@@ -704,3 +713,288 @@ def mark_gateway_send_failed(
     if not accepted:
         raise HTTPException(status_code=409, detail="Attempt is not a definitive pre-transmission send failure")
     return {"job_id": job_id, "state": "RETRY_PENDING_OR_FAILED"}
+
+
+
+def _queue_snapshot(connection, batch_id: UUID, tenant_id: UUID, user_id: UUID) -> dict[str, Any]:
+    # Re-evaluate stale Gateway assignments before reporting the user's live queue.
+    connection.execute("SELECT dm_rebalance_unstarted_batches()")
+    batch = connection.execute(
+        """
+        SELECT id, tenant_id, requested_by_user_id, status, created_at,
+               assigned_gateway_id, cancellation_requested_at, cancelled_at,
+               cancellation_reason, total_jobs
+          FROM dm_check_batches
+         WHERE id=%s AND tenant_id=%s AND requested_by_user_id=%s
+        """,
+        (batch_id, tenant_id, user_id),
+    ).fetchone()
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    counts = connection.execute(
+        """
+        SELECT
+          count(*) AS total_devices,
+          count(*) FILTER (WHERE state='COMPLETED') AS completed_devices,
+          count(*) FILTER (WHERE state='FAILED') AS failed_devices,
+          count(*) FILTER (WHERE state='CANCELLED') AS cancelled_devices,
+          count(*) FILTER (WHERE state IN ('QUEUED','RETRY_PENDING')) AS waiting_devices,
+          count(*) FILTER (WHERE state IN ('LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')) AS active_devices,
+          count(*) FILTER (WHERE state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')) AS remaining_devices
+        FROM dm_check_jobs WHERE batch_id=%s
+        """,
+        (batch_id,),
+    ).fetchone()
+
+    if batch["assigned_gateway_id"] is not None:
+        ahead = connection.execute(
+            """
+            SELECT count(j.id) AS devices_ahead,
+                   count(DISTINCT b.id) AS requests_ahead
+              FROM dm_check_batches b
+              JOIN dm_check_jobs j ON j.batch_id=b.id
+             WHERE b.assigned_gateway_id=%s
+               AND b.id<>%s
+               AND (b.created_at,b.id) < (%s,%s)
+               AND b.cancellation_requested_at IS NULL
+               AND j.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')
+            """,
+            (batch["assigned_gateway_id"], batch_id, batch["created_at"], batch_id),
+        ).fetchone()
+        gateway = connection.execute(
+            """
+            SELECT display_name, health_state, heartbeat_at,
+                   (health_state='READY' AND revoked_at IS NULL
+                    AND heartbeat_at >= now()-INTERVAL '90 seconds'
+                    AND sms_permission_ready AND telephony_ready AND network_ready) AS available
+              FROM dm_gateways WHERE id=%s
+            """,
+            (batch["assigned_gateway_id"],),
+        ).fetchone()
+    else:
+        ahead = connection.execute(
+            """
+            SELECT count(j.id) AS devices_ahead,
+                   count(DISTINCT b.id) AS requests_ahead
+              FROM dm_check_batches b
+              JOIN dm_check_jobs j ON j.batch_id=b.id
+             WHERE b.tenant_id=%s AND b.id<>%s
+               AND (b.created_at,b.id) < (%s,%s)
+               AND b.assigned_gateway_id IS NULL
+               AND b.cancellation_requested_at IS NULL
+               AND j.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')
+            """,
+            (tenant_id, batch_id, batch["created_at"], batch_id),
+        ).fetchone()
+        gateway = None
+
+    global_queue = connection.execute(
+        """
+        SELECT count(*) AS pending_devices
+          FROM dm_check_jobs j
+          JOIN dm_check_batches b ON b.id=j.batch_id
+         WHERE b.cancellation_requested_at IS NULL
+           AND j.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')
+        """
+    ).fetchone()["pending_devices"]
+
+    service_seconds = None
+    if batch["assigned_gateway_id"] is not None:
+        service_seconds = connection.execute(
+            """
+            SELECT percentile_cont(0.5) WITHIN GROUP (
+                       ORDER BY extract(epoch FROM (a.reply_received_at-a.sms_sent_at))
+                   ) AS median_seconds
+              FROM dm_job_attempts a
+             WHERE a.gateway_id=%s
+               AND a.sms_sent_at IS NOT NULL
+               AND a.reply_received_at IS NOT NULL
+               AND a.reply_received_at >= now()-INTERVAL '30 days'
+            """,
+            (batch["assigned_gateway_id"],),
+        ).fetchone()["median_seconds"]
+    if service_seconds is None:
+        service_seconds = connection.execute(
+            """
+            SELECT avg(CASE WHEN lower(query_profile) LIKE '%partner%' THEN 180.0 ELSE 120.0 END) AS fallback
+              FROM dm_check_jobs WHERE batch_id=%s
+            """,
+            (batch_id,),
+        ).fetchone()["fallback"] or 120.0
+
+    devices_ahead = int(ahead["devices_ahead"] or 0)
+    requests_ahead = int(ahead["requests_ahead"] or 0)
+    remaining = int(counts["remaining_devices"] or 0)
+    started = int(counts["active_devices"] or 0) > 0 or int(counts["completed_devices"] or 0) > 0
+    can_estimate = bool(gateway and gateway["available"]) and batch["assigned_gateway_id"] is not None
+    estimated_start = 0 if started else (round(devices_ahead * float(service_seconds)) if can_estimate else None)
+    estimated_completion = (
+        round((devices_ahead + remaining) * float(service_seconds))
+        if can_estimate else None
+    )
+    queue_position = requests_ahead + 1 if batch["assigned_gateway_id"] is not None else requests_ahead + 1
+
+    return jsonable_encoder({
+        "batch_id": batch_id,
+        "status": batch["status"],
+        "gateway_id": batch["assigned_gateway_id"],
+        "gateway_name": gateway["display_name"] if gateway else None,
+        "gateway_available": gateway["available"] if gateway else False,
+        "queue_position_on_gateway": queue_position,
+        "requests_ahead_on_gateway": requests_ahead,
+        "devices_ahead_on_gateway": devices_ahead,
+        "global_pending_devices": int(global_queue or 0),
+        "total_devices": int(counts["total_devices"] or 0),
+        "completed_devices": int(counts["completed_devices"] or 0),
+        "failed_devices": int(counts["failed_devices"] or 0),
+        "cancelled_devices": int(counts["cancelled_devices"] or 0),
+        "waiting_devices": int(counts["waiting_devices"] or 0),
+        "active_devices": int(counts["active_devices"] or 0),
+        "remaining_devices": remaining,
+        "estimated_start_seconds": estimated_start,
+        "estimated_completion_seconds": estimated_completion,
+        "estimate_basis": "30-day median reply time for this Gateway; otherwise the configured 120s/180s query wait profile",
+        "cancellation_requested_at": batch["cancellation_requested_at"],
+        "cancelled_at": batch["cancelled_at"],
+        "cancellation_reason": batch["cancellation_reason"],
+    })
+
+
+@app.get("/v1/client/check-batches/{batch_id}/queue")
+def read_check_batch_queue(
+    batch_id: UUID,
+    tenant_id: UUID,
+    user=Depends(get_current_user),
+    connection=Depends(get_db),
+):
+    return _queue_snapshot(connection, batch_id, tenant_id, user["id"])
+
+
+@app.post("/v1/client/check-batches/{batch_id}/cancel")
+def cancel_check_batch(
+    batch_id: UUID,
+    tenant_id: UUID,
+    body: CancellationRequest,
+    user=Depends(get_current_user),
+    connection=Depends(get_db),
+):
+    row = connection.execute(
+        """
+        SELECT * FROM dm_cancel_check_batch(%s,%s,%s,%s)
+        """,
+        (batch_id, tenant_id, user["id"], body.reason),
+    ).fetchone()
+    if row is None or not row["accepted"]:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    return jsonable_encoder({
+        "batch_id": batch_id,
+        "status": row["batch_status"],
+        "total_devices": row["total_jobs"],
+        "completed_devices": row["completed_jobs"],
+        "cancelled_devices": row["cancelled_jobs"],
+        "in_flight_devices": row["in_flight_jobs"],
+        "cancellation_requested": True,
+    })
+
+
+@app.get("/v1/client/tenants/{tenant_id}/gateway-analytics")
+def read_gateway_analytics(
+    tenant_id: UUID,
+    user=Depends(get_current_user),
+    connection=Depends(get_db),
+):
+    membership = connection.execute(
+        """
+        SELECT role FROM dm_tenant_memberships
+         WHERE tenant_id=%s AND user_id=%s
+        """,
+        (tenant_id, user["id"]),
+    ).fetchone()
+    if membership is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    if membership["role"] not in ("OWNER", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Tenant administrator access required")
+
+    metrics = connection.execute(
+        """
+        WITH batches AS (
+            SELECT * FROM dm_check_batches WHERE tenant_id=%s
+        ),
+        jobs AS (
+            SELECT j.* FROM dm_check_jobs j WHERE j.tenant_id=%s
+        ),
+        attempts AS (
+            SELECT a.*, j.enqueued_at
+              FROM dm_job_attempts a
+              JOIN jobs j ON j.id=a.job_id
+        ),
+        gateways AS (
+            SELECT g.* FROM dm_gateways g
+             JOIN dm_tenant_memberships m
+               ON m.user_id=g.owner_user_id AND m.tenant_id=%s
+        )
+        SELECT
+          (SELECT count(*) FROM batches) AS total_requests,
+          (SELECT count(*) FROM jobs) AS total_devices_requested,
+          (SELECT count(*) FROM jobs WHERE state='COMPLETED') AS completed_devices,
+          (SELECT count(*) FROM jobs WHERE state='FAILED') AS failed_devices,
+          (SELECT count(*) FROM jobs WHERE state='CANCELLED') AS cancelled_devices,
+          (SELECT count(*) FROM jobs WHERE state IN ('QUEUED','RETRY_PENDING')) AS waiting_devices,
+          (SELECT count(*) FROM jobs WHERE state IN ('LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')) AS active_devices,
+          (SELECT count(*) FROM batches WHERE cancellation_requested_at IS NOT NULL) AS cancelled_requests,
+          (SELECT count(*) FROM attempts) AS total_attempts,
+          (SELECT count(*) FROM attempts WHERE state='TIMED_OUT') AS timed_out_attempts,
+          (SELECT count(*) FROM attempts WHERE state='AMBIGUOUS') AS ambiguous_attempts,
+          (SELECT percentile_cont(0.5) WITHIN GROUP (
+              ORDER BY extract(epoch FROM (send_started_at-enqueued_at))
+           ) FROM attempts WHERE send_started_at IS NOT NULL) AS median_queue_wait_seconds,
+          (SELECT percentile_cont(0.5) WITHIN GROUP (
+              ORDER BY extract(epoch FROM (reply_received_at-sms_sent_at))
+           ) FROM attempts WHERE sms_sent_at IS NOT NULL AND reply_received_at IS NOT NULL) AS median_reply_seconds,
+          (SELECT count(*) FROM gateways) AS registered_gateways,
+          (SELECT count(*) FROM gateways WHERE health_state='READY'
+             AND revoked_at IS NULL AND heartbeat_at >= now()-INTERVAL '90 seconds'
+             AND sms_permission_ready AND telephony_ready AND network_ready) AS ready_gateways,
+          (SELECT count(*) FROM gateways WHERE health_state='QUARANTINED') AS quarantined_gateways,
+          (SELECT count(*) FROM gateways WHERE health_state='OFFLINE'
+             OR heartbeat_at IS NULL OR heartbeat_at < now()-INTERVAL '90 seconds') AS offline_gateways,
+          (SELECT count(*) FROM dm_gateway_health_events h
+             JOIN gateways g ON g.id=h.gateway_id
+            WHERE h.event_at >= now()-INTERVAL '30 days') AS health_transitions_30d
+        """,
+        (tenant_id, tenant_id, tenant_id),
+    ).fetchone()
+
+    daily = connection.execute(
+        """
+        SELECT date_trunc('day',b.created_at)::date AS day,
+               count(DISTINCT b.id) AS requests,
+               count(j.id) AS devices_requested,
+               count(j.id) FILTER (WHERE j.state='COMPLETED') AS devices_completed,
+               count(j.id) FILTER (WHERE j.state='CANCELLED') AS devices_cancelled
+          FROM dm_check_batches b
+          LEFT JOIN dm_check_jobs j ON j.batch_id=b.id
+         WHERE b.tenant_id=%s AND b.created_at >= now()-INTERVAL '30 days'
+         GROUP BY date_trunc('day',b.created_at)::date
+         ORDER BY day
+        """,
+        (tenant_id,),
+    ).fetchall()
+
+    total_requests = int(metrics["total_requests"] or 0)
+    cancelled_requests = int(metrics["cancelled_requests"] or 0)
+    total_attempts = int(metrics["total_attempts"] or 0)
+    completed = int(metrics["completed_devices"] or 0)
+    failed = int(metrics["failed_devices"] or 0)
+    return jsonable_encoder({
+        "period_days": 30,
+        "metrics": {
+            **metrics,
+            "request_cancellation_rate_percent": round(cancelled_requests * 100 / total_requests, 1) if total_requests else 0,
+            "device_success_rate_percent": round(completed * 100 / (completed + failed), 1) if completed + failed else None,
+            "attempt_timeout_rate_percent": round(int(metrics["timed_out_attempts"] or 0) * 100 / total_attempts, 1) if total_attempts else None,
+        },
+        "daily_activity": daily,
+        "note": "Metrics are tenant-scoped. Queue depth is current; historical queue-depth sampling will be added with the operational monitoring worker.",
+    })
