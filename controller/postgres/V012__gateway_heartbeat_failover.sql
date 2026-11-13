@@ -14,11 +14,6 @@ BEGIN
            AND (heartbeat_at IS NULL OR heartbeat_at < now()-INTERVAL '90 seconds')
         RETURNING id,app_version
     LOOP
-        INSERT INTO dm_gateway_health_events(
-            gateway_id,previous_state,new_state,app_version
-        ) VALUES (
-            gateway_row.id,'READY','OFFLINE',gateway_row.app_version
-        );
         INSERT INTO dm_gateway_audit_events(
             gateway_id,event_type,details
         ) VALUES (
