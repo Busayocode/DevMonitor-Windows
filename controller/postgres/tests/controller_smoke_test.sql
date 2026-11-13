@@ -216,9 +216,9 @@ BEGIN
         '{"todayCount":1,"mtdCount":1,"active":1,"bar48":0,"bar96":0,"duplicates":0,"monthlyTarget":200}'::jsonb,
         'controller-test-parser');
     IF NOT accepted THEN RAISE EXCEPTION 'delayed cache result was not accepted'; END IF;
-    IF (SELECT job_id FROM dm_daily_sms_results
-         WHERE tenant_id=tenant_a AND canonical_device_id='CACHE-DEVICE'
-           AND business_date=CURRENT_DATE) IS DISTINCT FROM cache_first_job THEN
+    IF (SELECT r.job_id FROM dm_daily_sms_results r
+         WHERE r.tenant_id=tenant_a AND r.canonical_device_id='CACHE-DEVICE'
+           AND r.business_date=CURRENT_DATE) IS DISTINCT FROM cache_first_job THEN
         RAISE EXCEPTION 'older delayed response overwrote the newer daily cache row';
     END IF;
     IF (SELECT values_json->>'todayCount' FROM dm_daily_sms_results
