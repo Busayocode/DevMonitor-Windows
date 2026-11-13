@@ -7,9 +7,9 @@ DECLARE
     user_a UUID; user_b UUID;
     tenant_a UUID; tenant_b UUID; tenant_c UUID; tenant_d UUID;
     gateway_personal UUID; gateway_pool UUID; gateway_f1 UUID; gateway_f2 UUID; gateway_f3 UUID;
-    batch_a UUID; batch_b UUID; batch_c UUID; batch_d UUID;
-    job_personal UUID; job_shared UUID; job_c UUID; job_d UUID;
-    claim_row RECORD; claim_f1 RECORD; claim_f2 RECORD; claim_f3 RECORD;
+    batch_a UUID; batch_b UUID; batch_c UUID; batch_d UUID; batch_old UUID;
+    job_personal UUID; job_shared UUID; job_c UUID; job_d UUID; job_old UUID;
+    claim_row RECORD; claim_f1 RECORD; claim_f2 RECORD; claim_f3 RECORD; claim_old RECORD;
     reaper_row RECORD;
     personal_attempt UUID; personal_token TEXT;
     attempt_f1 UUID; attempt_f3 UUID; token_f3 TEXT;
@@ -99,6 +99,36 @@ BEGIN
                     WHERE tenant_id=tenant_a AND canonical_device_id='GLO-GD-PERSONAL'
                       AND business_date=CURRENT_DATE) THEN
         RAISE EXCEPTION 'daily result cache row missing';
+    END IF;
+
+    -- A delayed older response may complete its own job but cannot replace the latest daily cache row.
+    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
+    VALUES (tenant_a,user_a,'personal-old-check','GATEWAY',1,digest('personal-old-check','sha256'))
+    RETURNING id INTO batch_old;
+    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,preferred_gateway_id)
+    VALUES (batch_old,tenant_a,user_a,'GLO-GD-PERSONAL','standard',gateway_personal)
+    RETURNING id INTO job_old;
+    SELECT * INTO claim_old FROM dm_claim_next_job(gateway_personal);
+    IF claim_old.job_id IS DISTINCT FROM job_old THEN
+        RAISE EXCEPTION 'personal gateway did not claim delayed-result test job';
+    END IF;
+    accepted := dm_mark_attempt_sending(gateway_personal,job_old,claim_old.attempt_id,claim_old.lease_token);
+    IF NOT accepted THEN RAISE EXCEPTION 'could not start delayed-result test attempt'; END IF;
+    accepted := dm_mark_attempt_awaiting_reply(
+        gateway_personal,job_old,claim_old.attempt_id,claim_old.lease_token,now(),120
+    );
+    IF NOT accepted THEN RAISE EXCEPTION 'could not await delayed-result test reply'; END IF;
+    accepted := dm_complete_job_result(
+        gateway_personal,job_old,claim_old.attempt_id,claim_old.lease_token,
+        CURRENT_DATE,now()-INTERVAL '1 minute',now(),
+        '{"todayCount":1,"mtdCount":1,"active":1,"bar48":0,"bar96":0,"duplicates":0,"monthlyTarget":200}'::jsonb,
+        'controller-test-parser'
+    );
+    IF NOT accepted THEN RAISE EXCEPTION 'delayed result attempt was not completed'; END IF;
+    IF (SELECT job_id FROM dm_daily_sms_results
+         WHERE tenant_id=tenant_a AND canonical_device_id='GLO-GD-PERSONAL'
+           AND business_date=CURRENT_DATE) IS DISTINCT FROM job_personal THEN
+        RAISE EXCEPTION 'older delayed result overwrote latest daily cache';
     END IF;
 
     -- Tenant C is older and gets the first fair turn; tenant D gets the next one.
