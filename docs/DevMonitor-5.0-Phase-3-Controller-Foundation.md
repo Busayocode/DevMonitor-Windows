@@ -32,7 +32,7 @@ The database claim function:
 - Enforces one unresolved SMS attempt per physical gateway.
 - Checks personal owner work before shared-pool work.
 - Keeps owner-preferred jobs reserved while their personal gateway is healthy.
-- Uses tenant-level round-robin state for shared jobs.
+- Uses two-level round-robin state: rotate tenants, then rotate requesters within the selected tenant.
 - Locks selected queue rows so two gateways cannot claim the same job.
 
 ### 3. Safe failure handling
@@ -96,4 +96,4 @@ The OpenAPI contract and reference handlers cover:
 
 ## Next stage
 
-Implement the HTTPS controller service against this contract and database, with identity verification and transactional repository methods. Only after database integration tests pass should a test gateway phone be registered. Backend provider and operating cost must be reviewed before provisioning production hosting.
+Production-harden the reference HTTPS service: configure and test the selected identity provider, create least-privilege PostgreSQL roles, add rate limits and operational monitoring, run cross-process concurrency and restart-recovery tests, then deploy to a selected host. Only after those gates pass should a test gateway phone be registered. Backend provider and operating cost must be reviewed and explicitly approved before provisioning.
