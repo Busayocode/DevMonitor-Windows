@@ -1008,9 +1008,9 @@ def read_gateway_analytics(
                 )
         ),
         health_segments AS (
-            SELECT h.gateway_id,h.new_state,h.event_at,
+            SELECT h.id,h.gateway_id,h.new_state,h.event_at,
                    lead(h.event_at,1,now()) OVER (
-                       PARTITION BY h.gateway_id ORDER BY h.event_at
+                       PARTITION BY h.gateway_id ORDER BY h.event_at,h.id
                    ) AS next_at
               FROM dm_gateway_health_events h
               JOIN gateways g ON g.id=h.gateway_id
