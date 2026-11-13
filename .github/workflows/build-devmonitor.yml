@@ -237,6 +237,70 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Project directory: $PROJECT_DIR"
 
+      - name: Audit Android SMS permission and receiver implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path(os.environ["PROJECT_DIR"]) if "PROJECT_DIR" in os.environ else None
+          if root is None:
+              raise SystemExit("PROJECT_DIR was not exported for the SMS permission audit.")
+          report = Path("sms-permission-audit.txt")
+          lines = ["DEVMonitor Android SMS Permission Audit", f"Project: {root}", ""]
+          manifest = root / "app/src/main/AndroidManifest.xml"
+          if not manifest.is_file():
+              raise SystemExit(f"Android manifest not found: {manifest}")
+          lines += ["=== AndroidManifest.xml ===", manifest.read_text(encoding="utf-8"), ""]
+          patterns = re.compile(
+              r"READ_SMS|RECEIVE_SMS|SEND_SMS|SMS_RECEIVED|SmsManager|"
+              r"BroadcastReceiver|requestPermissions|RequestPermission|"
+              r"checkSelfPermission|shouldShowRequestPermissionRationale|"
+              r"installerPackageName|PackageManager\.getInstallSourceInfo|"
+              r"POST_NOTIFICATIONS|targetSdk|minSdk|uses-permission",
+              re.IGNORECASE
+          )
+          roots = [root / "app/src/main"]
+          count = 0
+          for base in roots:
+              for file in sorted(base.rglob("*")):
+                  if not file.is_file() or file.suffix not in {".kt", ".java", ".xml", ".gradle", ".kts"}:
+                      continue
+                  try:
+                      source = file.read_text(encoding="utf-8")
+                  except (UnicodeDecodeError, OSError):
+                      continue
+                  src_lines = source.splitlines()
+                  matched = [i for i, line in enumerate(src_lines) if patterns.search(line)]
+                  if not matched:
+                      continue
+                  lines += [f"=== {file.relative_to(root)} ({len(matched)} matching lines) ==="]
+                  selected = set()
+                  for i in matched:
+                      selected.update(range(max(0, i-2), min(len(src_lines), i+3)))
+                  previous = -2
+                  for i in sorted(selected):
+                      if i > previous + 1:
+                          lines.append("...")
+                      lines.append(f"{i+1}: {src_lines[i]}")
+                      previous = i
+                  lines.append("")
+                  count += len(matched)
+          lines += [f"Total matched source lines: {count}", ""]
+          report.write_text("\n".join(lines), encoding="utf-8")
+          print(f"Created {report} with manifest and SMS permission/receiver call-site evidence.")
+          PY
+
+      - name: Upload SMS permission audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Android-SMS-Permission-Audit
+          path: sms-permission-audit.txt
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Preserve original Android source snapshot for review
         shell: bash
         run: |
@@ -523,8 +587,8 @@ jobs:
           from pathlib import Path
 
           props = Path("gradle.properties").read_text(encoding="utf-8").splitlines()
-          expected = actual[0] if len(actual) == 1 else ""
           actual = [line.split("=", 1)[1] for line in props if line.startswith("DRIVE_REPORT_API_KEY=")]
+          expected = actual[0] if len(actual) == 1 else ""
           folder = [line.split("=", 1)[1] for line in props if line.startswith("DRIVE_REPORT_FOLDER_ID=")]
 
           if not expected or actual != [expected]:
