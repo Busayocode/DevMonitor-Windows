@@ -323,9 +323,24 @@ def create_check_batch(
 
         existing = connection.execute(
             """
-            SELECT id, request_fingerprint, status, total_jobs
-              FROM dm_check_batches
-             WHERE tenant_id=%s AND requested_by_user_id=%s AND client_idempotency_key=%s
+            SELECT b.id, b.request_fingerprint,
+                   (SELECT count(*) FROM dm_check_jobs j WHERE j.batch_id=b.id) AS total_jobs,
+                   CASE
+                     WHEN EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id
+                                  AND j.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS'))
+                       THEN 'RUNNING'
+                     WHEN EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='FAILED')
+                       AND NOT EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='COMPLETED')
+                       THEN 'FAILED'
+                     WHEN EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='FAILED')
+                       THEN 'PARTIAL'
+                     WHEN EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id)
+                       AND NOT EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state<>'COMPLETED')
+                       THEN 'COMPLETED'
+                     ELSE 'QUEUED'
+                   END AS status
+              FROM dm_check_batches b
+             WHERE b.tenant_id=%s AND b.requested_by_user_id=%s AND b.client_idempotency_key=%s
             """,
             (body.tenant_id, user["id"], idempotency_key),
         ).fetchone()
@@ -393,9 +408,26 @@ def read_check_batch(
         raise HTTPException(status_code=404, detail="Batch not found")
     batch = connection.execute(
         """
-        SELECT id, status, total_jobs, completed_jobs, failed_jobs, created_at, updated_at
-          FROM dm_check_batches
-         WHERE id=%s AND tenant_id=%s
+        SELECT b.id, b.created_at, b.updated_at,
+               (SELECT count(*) FROM dm_check_jobs j WHERE j.batch_id=b.id) AS total_jobs,
+               (SELECT count(*) FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='COMPLETED') AS completed_jobs,
+               (SELECT count(*) FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='FAILED') AS failed_jobs,
+               CASE
+                 WHEN EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id
+                              AND j.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS'))
+                   THEN 'RUNNING'
+                 WHEN EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='FAILED')
+                   AND NOT EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='COMPLETED')
+                   THEN 'FAILED'
+                 WHEN EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='FAILED')
+                   THEN 'PARTIAL'
+                 WHEN EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id)
+                   AND NOT EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state<>'COMPLETED')
+                   THEN 'COMPLETED'
+                 ELSE 'QUEUED'
+               END AS status
+          FROM dm_check_batches b
+         WHERE b.id=%s AND b.tenant_id=%s
         """,
         (batch_id, tenant_id),
     ).fetchone()
