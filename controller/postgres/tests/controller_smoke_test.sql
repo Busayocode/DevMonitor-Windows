@@ -1,4 +1,4 @@
--- Integration smoke tests for V001-V010 on a clean disposable PostgreSQL database.
+-- Integration smoke tests for V001-V013 on a clean disposable PostgreSQL database.
 -- Covers request-level multi-Gateway distribution, safe failover, cancellation and
 -- the existing 3030 attempt/result-correlating safety rules. All fixtures roll back.
 BEGIN;
