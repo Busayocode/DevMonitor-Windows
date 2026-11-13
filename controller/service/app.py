@@ -446,9 +446,9 @@ def read_check_batch(
                (SELECT count(*) FROM dm_check_jobs j WHERE j.batch_id=b.id
                   AND j.state IN ('LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')) AS active_jobs
           FROM dm_check_batches b
-         WHERE b.id=%s AND b.tenant_id=%s
+         WHERE b.id=%s AND b.tenant_id=%s AND b.requested_by_user_id=%s
         """,
-        (batch_id, tenant_id),
+        (batch_id, tenant_id, user["id"]),
     ).fetchone()
     if batch is None:
         raise HTTPException(status_code=404, detail="Batch not found")
