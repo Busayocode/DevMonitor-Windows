@@ -5,13 +5,15 @@ CREATE TABLE IF NOT EXISTS dm_tenant_queue_snapshots (
     id BIGSERIAL PRIMARY KEY,
     tenant_id UUID NOT NULL REFERENCES dm_tenants(id) ON DELETE CASCADE,
     captured_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    snapshot_minute TIMESTAMPTZ NOT NULL DEFAULT date_trunc('minute',now()),
     pending_devices INTEGER NOT NULL DEFAULT 0,
     waiting_devices INTEGER NOT NULL DEFAULT 0,
     active_devices INTEGER NOT NULL DEFAULT 0,
     waiting_requests INTEGER NOT NULL DEFAULT 0,
     active_requests INTEGER NOT NULL DEFAULT 0,
     ready_gateways INTEGER NOT NULL DEFAULT 0,
-    busy_gateways INTEGER NOT NULL DEFAULT 0
+    busy_gateways INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT dm_tenant_queue_snapshots_minute_unique UNIQUE (tenant_id,snapshot_minute)
 );
 
 CREATE INDEX IF NOT EXISTS dm_tenant_queue_snapshots_time_idx
@@ -22,10 +24,10 @@ RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE inserted_count INTEGER;
 BEGIN
     INSERT INTO dm_tenant_queue_snapshots(
-        tenant_id,captured_at,pending_devices,waiting_devices,active_devices,
+        tenant_id,captured_at,snapshot_minute,pending_devices,waiting_devices,active_devices,
         waiting_requests,active_requests,ready_gateways,busy_gateways
     )
-    SELECT t.id,now(),
+    SELECT t.id,now(),date_trunc('minute',now()),
            count(j.id) FILTER (WHERE j.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')),
            count(j.id) FILTER (WHERE j.state IN ('QUEUED','RETRY_PENDING')),
            count(j.id) FILTER (WHERE j.state IN ('LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')),
