@@ -52,10 +52,10 @@ BEGIN
       (tenant_a,'GLO-GD-PERSONAL'), (tenant_b,'GLO-GD-SHARED'),
       (tenant_c,'GLO-GD-FAIR-C'), (tenant_d,'GLO-GD-FAIR-D');
 
-    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs)
-    VALUES (tenant_a,user_a,'personal-batch','GATEWAY',1) RETURNING id INTO batch_a;
-    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs)
-    VALUES (tenant_b,user_b,'shared-batch','GATEWAY',1) RETURNING id INTO batch_b;
+    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
+    VALUES (tenant_a,user_a,'personal-batch','GATEWAY',1,digest('personal-batch','sha256')) RETURNING id INTO batch_a;
+    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
+    VALUES (tenant_b,user_b,'shared-batch','GATEWAY',1,digest('shared-batch','sha256')) RETURNING id INTO batch_b;
 
     INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,preferred_gateway_id)
     VALUES (batch_a,tenant_a,user_a,'GLO-GD-PERSONAL','standard',gateway_personal)
@@ -104,10 +104,10 @@ BEGIN
     -- Tenant C is older and gets the first fair turn; tenant D gets the next one.
     INSERT INTO dm_tenant_device_access(tenant_id,canonical_device_id) VALUES
       (tenant_c,'GLO-GD-FAIR-C'), (tenant_d,'GLO-GD-FAIR-D');
-    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs)
-    VALUES (tenant_c,user_a,'fair-c','GATEWAY',1) RETURNING id INTO batch_c;
-    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs)
-    VALUES (tenant_d,user_b,'fair-d','GATEWAY',1) RETURNING id INTO batch_d;
+    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
+    VALUES (tenant_c,user_a,'fair-c','GATEWAY',1,digest('fair-c','sha256')) RETURNING id INTO batch_c;
+    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
+    VALUES (tenant_d,user_b,'fair-d','GATEWAY',1,digest('fair-d','sha256')) RETURNING id INTO batch_d;
     INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,enqueued_at)
     VALUES (batch_c,tenant_c,user_a,'GLO-GD-FAIR-C','standard',now()-INTERVAL '2 minutes')
     RETURNING id INTO job_c;
