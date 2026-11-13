@@ -5,7 +5,7 @@ This is the reference FastAPI service for the DevMonitor 5.0 controller. It is s
 ## Local run
 
 1. Create a dedicated PostgreSQL database.
-2. Apply the migrations in `../postgres/` in numeric order, V001 through V008.
+2. Apply the migrations in `../postgres/` in numeric order, V001 through V010.
 3. Copy `.env.example` to a private environment file and set:
    - `DATABASE_URL` to the controller database.
    - `FIREBASE_PROJECT_ID` to the exact Project ID shown in Firebase Console > Project settings > General.
@@ -29,7 +29,10 @@ Firebase Authentication is the selected identity provider. The existing `Fieldpu
 - Client batch requests are transactional and idempotent. The same key and same request fingerprint returns the original batch; the same key with a different payload returns HTTP 409.
 - Tenant membership and active device grants are checked before enqueue and before cache/history reads.
 - The caller's personal gateway can be selected for priority work. The server checks that the gateway belongs to the authenticated requester.
-- Gateway phones claim one job at a time and submit state transitions against a lease token.
+- The controller assigns whole request batches across healthy, eligible Gateways in arrival order. When a Gateway becomes ready or leaves the pool, unstarted batches are rebalanced; a batch already sending remains tied to its attempt until safely resolved. Each Gateway processes one SMS attempt at a time.
+- Queue snapshots show the request's assigned Gateway, requests/devices ahead on that Gateway, global pending-device count and approximate start/completion estimates. Estimates use the Gateway's recent median reply time, falling back to the existing 120-second Standard or 180-second Partner wait profile.
+- Users can cancel their own batch. Queued and pre-send leased jobs are stopped; an SMS already in progress or ambiguous is not forcibly interrupted. Completed results remain available.
+- Tenant OWNER/ADMIN users can read aggregate Gateway analytics for their tenant. The current API reports request/device totals, cancellation/timeout/success rates, median queue/reply times, current Gateway health and 30-day activity.
 - The service maps query profiles containing `partner` to the existing 180-second Partner wait; other standard profiles use 120 seconds.
 - A background reaper runs every 15 seconds by default. Pre-send expired leases may be safely requeued; possible-send expiries become AMBIGUOUS and quarantine the phone.
 - Batch status is derived from its per-device job states so ambiguous work remains visibly RUNNING until operator resolution.
@@ -37,4 +40,4 @@ Firebase Authentication is the selected identity provider. The existing `Fieldpu
 
 ## Not production-ready yet
 
-The code still needs real identity-provider integration tests, explicit PostgreSQL runtime-role grants, rate limiting, structured security/audit monitoring, deployment secrets management, cross-process contention/load tests, restart recovery tests and a live gateway-phone test. No paid service or cloud host has been selected.
+The code still needs real identity-provider integration tests, explicit PostgreSQL runtime-role grants, rate limiting, structured security/audit monitoring, deployment secrets management, cross-process contention/load tests, restart recovery tests, queue-rebalance/failover tests and a live gateway-phone test. Historical queue-depth sampling and time-weighted Gateway uptime/utilization are not yet implemented; current queue depth and Gateway health are point-in-time metrics. No paid service or cloud host has been selected.
