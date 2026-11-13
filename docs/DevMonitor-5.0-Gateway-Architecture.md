@@ -399,3 +399,58 @@ The shared data-service milestone is not complete until tests prove that:
 9. A quarantined gateway receives no new SMS job, while healthy gateways continue.
 10. Restarting the controller or a gateway does not lose daily history, queued work or active-transaction safety state.
 
+## 15. Personal gateway ownership and priority
+
+A standalone user who has another eligible DevMonitor phone may register that phone as a **Personal Gateway**. This is an ownership relationship between the authenticated account and a gateway installation; it is not a separate private server.
+
+### 15.1 Pairing and selection
+
+- The owner signs into DevMonitor on the second phone and chooses Register as Personal Gateway.
+- The controller pairs the installation to the authenticated owner and records an immutable owner-scope association.
+- From the main client, the owner selects one of their paired, healthy gateway phones as the preferred personal gateway for fresh checks.
+- The client may display only gateways the authenticated owner is entitled to select. It must not accept an arbitrary gateway ID as proof of ownership.
+- A user may later change the preferred gateway or revoke/unpair the phone. Revocation stops new assignments and safely resolves any active transaction before credentials are invalidated.
+
+### 15.2 Personal fast lane
+
+- Jobs submitted by the owner with their selected personal gateway are marked with a server-validated preferred gateway.
+- That gateway claims its owner's queued jobs before shared-pool work, even if other users' shared jobs were enqueued earlier.
+- Other workers leave those jobs reserved while the preferred gateway is healthy and READY. If it becomes OFFLINE, NOT_READY or QUARANTINED, the controller may fail over the job to another eligible shared worker.
+- Personal priority never interrupts an already-started SMS transaction. If the phone is processing another user's query, it finishes or safely resolves that 3030 transaction; the owner's request is the next job claimed by that phone.
+- The selected phone remains limited to one unresolved 3030 transaction at a time. This preserves response correlation because the reply does not echo the requested device code.
+
+### 15.3 Optional shared-pool contribution
+
+The owner chooses one of two modes:
+- **Personal only:** the phone serves its owner and does not claim other users' jobs.
+- **Personal + shared pool:** the phone serves owner jobs first and accepts shared jobs whenever it has no owner work waiting.
+
+The owner may switch pool participation off at any time. Turning it off prevents new shared assignments but does not interrupt an SMS transaction already in progress. Owner jobs remain eligible.
+
+### 15.4 Shared queue fairness
+
+Shared-pool scheduling must rotate across authenticated user/tenant scopes rather than drain one user's entire batch first. For example, with User A's 50 jobs and User B's 10 jobs queued, workers should take turns across scopes (A1, B1, A2, B2, and so on) while preserving FIFO order within each scope. This is a scheduling policy, not a promise of equal total completion time: gateways claim jobs dynamically as they become ready, and real completion depends on SMS response times and gateway health.
+
+Personal jobs reserved for a healthy paired gateway do not block unrelated users' shared work. Personal jobs become eligible for shared failover only when the preferred gateway is unavailable under the controller's health policy.
+
+### 15.5 Security and audit requirements
+
+- Ownership is derived from authenticated server identity, not a client-supplied scope string.
+- A user cannot nominate, inspect, or reserve another user's personal gateway.
+- Gateway credentials remain installation-bound and revocable.
+- Audit personal gateway pairing, owner selection, pool opt-in/out, failover and unpairing.
+- Shared-pool jobs must not expose the owner's private cached results or device entitlements to the gateway owner.
+
+## 16. Personal gateway acceptance criteria
+
+1. A user can pair a second eligible DevMonitor phone to their own account.
+2. The owner can select one of their paired gateways as the preferred gateway.
+3. Owner jobs are claimed ahead of older shared-pool jobs by that gateway.
+4. The gateway completes an already-started SMS transaction safely before claiming an owner job.
+5. The owner can choose personal-only or personal-plus-pool participation.
+6. A personal-only gateway never claims another user's job.
+7. A personal-plus-pool gateway serves owner work first and uses idle capacity for shared work.
+8. Other tenants receive round-robin turns in the shared queue instead of waiting for one large batch to drain.
+9. When a personal gateway is unavailable, an eligible pool gateway can take the job without weakening attempt/lease correlation.
+10. No account can register or select another account's gateway as its personal gateway.
+
