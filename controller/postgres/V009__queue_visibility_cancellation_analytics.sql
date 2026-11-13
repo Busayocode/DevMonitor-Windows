@@ -27,10 +27,23 @@ DECLARE
     total_count INTEGER;
     cancel_requested TIMESTAMPTZ;
 BEGIN
-    target_batch := COALESCE(NEW.batch_id, OLD.batch_id);
+    IF TG_OP = 'DELETE' THEN
+        target_batch := OLD.batch_id;
+    ELSE
+        target_batch := NEW.batch_id;
+    END IF;
     SELECT cancellation_requested_at INTO cancel_requested
       FROM dm_check_batches WHERE id = target_batch;
-    IF NOT FOUND THEN RETURN COALESCE(NEW, OLD); END IF;
+    IF NOT FOUND THEN
+        IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+    END IF;
+
+    -- A failed in-flight attempt must not revive work after the requester cancelled.
+    IF cancel_requested IS NOT NULL THEN
+        UPDATE dm_check_jobs
+           SET state='CANCELLED', updated_at=now()
+         WHERE batch_id=target_batch AND state IN ('QUEUED','RETRY_PENDING');
+    END IF;
 
     SELECT
         count(*) FILTER (WHERE state IN ('LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')) > 0,
@@ -61,13 +74,13 @@ BEGIN
            END,
            updated_at = now()
      WHERE id = target_batch;
-    RETURN COALESCE(NEW, OLD);
+    IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
 END;
-$$;
+$;
 
 DROP TRIGGER IF EXISTS dm_job_refresh_batch_lifecycle ON dm_check_jobs;
 CREATE TRIGGER dm_job_refresh_batch_lifecycle
-AFTER INSERT OR UPDATE OF state OR DELETE ON dm_check_jobs
+AFTER INSERT OR UPDATE OR DELETE ON dm_check_jobs
 FOR EACH ROW EXECUTE FUNCTION dm_refresh_batch_lifecycle();
 
 -- Cancellation is idempotent and scoped to the authenticated requester and tenant.
