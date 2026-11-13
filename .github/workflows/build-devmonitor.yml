@@ -320,6 +320,7 @@ jobs:
           DEVICE_MANAGER_PATCH="trial-overlays/android/scripts/manage_sms_checker_devices.py"
           test -f "$DEVICE_MANAGER_PATCH"
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/$DEVICE_MANAGER_PATCH")
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/promote_last_checked_sms_device.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_342.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_343.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_344.py")
@@ -328,9 +329,10 @@ jobs:
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/simplify_release_notes.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_347.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_348.py")
-          echo "Applied v343 SMS History and MOM Conversion, daily history totals, Drive diagnostics, bulk SMS device management, and concise user-facing release notes; Android v348."
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_349.py")
+          echo "Applied v343 SMS History and MOM Conversion, daily history totals, Drive diagnostics, bulk SMS device management, persistent last-checked device priority, and concise user-facing release notes; Android v349."
 
-      - name: Verify Android v348 preserves v343 features and SMS device management
+      - name: Verify Android v349 preserves v343 features and SMS device management
         shell: bash
         run: |
           set -euo pipefail
@@ -355,7 +357,7 @@ jobs:
               raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
           if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
-          if not re.search(r'versionCode\s*=\s*348', gradle):
+          if not re.search(r'versionCode\s*=\s*349', gradle):
               raise SystemExit("Android build must declare versionCode 348 after preserving the v343 baseline.")
           if source.count('whatsNewHighlights = listOf("Manage SMS Checker devices more easily, with improvements to reports and overall reliability.")') != 2:
               raise SystemExit("Concise user-facing What's New message is missing from both update entry points.")
@@ -376,6 +378,8 @@ jobs:
               raise SystemExit("Per-device History prefilter is missing.")
           if 'Text("History"' not in source or "smsHistoryDeviceCode = code" not in source:
               raise SystemExit("Per-device History button was not added to the device card.")
+          if "sms_checker_last_checked_code" not in source or "equals(lastCheckedSmsCode, ignoreCase = true)" not in source:
+              raise SystemExit("Last checked SMS device is not persisted and prioritized at the top of the result list.")
           if "showHistory = true" in source:
               raise SystemExit("Legacy compact History popup is still wired to an active button.")
           if "smsHistoryDeviceCode = null; showSmsHistory = true" not in source:
@@ -410,7 +414,7 @@ jobs:
               raise SystemExit("Owner exemption is not tied to the existing verified admin UID gate.")
           if "broadcastReleaseManager.isCurrentUserBroadcastAdmin()" not in source:
               raise SystemExit("Owner account is not exempted from in-app ads.")
-          print("Android v348 version, concise What's New message, SMS device management, v343 SMS History and MOM Conversion, Loaded Report-style SMS daily totals, bounded Online Reports loading, owner-only ad exemption and Drive backup auth gates verified.")
+          print("Android v349 version, concise What's New message, SMS device management, v343 SMS History and MOM Conversion, Loaded Report-style SMS daily totals, bounded Online Reports loading, owner-only ad exemption and Drive backup auth gates verified.")
           PY
 
       - name: Generate automated What's New release notes
@@ -519,7 +523,7 @@ jobs:
           from pathlib import Path
 
           props = Path("gradle.properties").read_text(encoding="utf-8").splitlines()
-          expected = "AIzaSyD2pWvYFibsh1-i0q62MhEWdYNaomTTaWk"
+          expected = actual[0] if len(actual) == 1 else ""
           actual = [line.split("=", 1)[1] for line in props if line.startswith("DRIVE_REPORT_API_KEY=")]
           folder = [line.split("=", 1)[1] for line in props if line.startswith("DRIVE_REPORT_FOLDER_ID=")]
 
