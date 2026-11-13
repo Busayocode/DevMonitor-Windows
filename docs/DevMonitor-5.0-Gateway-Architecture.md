@@ -292,3 +292,110 @@ The gateway foundation is not ready for release until:
 - Gateway credentials can be revoked and user data remains isolated.
 
 **Guiding engineering principle:** correctness and isolation first; parallel throughput second.
+
+
+## 14. Shared gateway data service, daily cache and cross-client history
+
+The gateway is not merely an SMS relay. It is also a shared, authenticated data service for the DevMonitor ecosystem. It maintains the authoritative gateway-side record of checks it has completed and makes authorized history available to clients, including clients that did not initiate the original check.
+
+### 14.1 Daily result storage
+
+For every successfully parsed and safely correlated device check, the service stores a normalized result with at least:
+
+- Canonical device/partner code (the full DevMonitor identity, not only the shortened SMS destination).
+- Calendar date of the check, using the agreed service/business timezone.
+- Exact check timestamp, including timezone/UTC offset.
+- Today's SIMReg Count, MTD SIMReg Count, Active, Bar 48, Bar 96, Duplicates and Monthly Target when present.
+- Gateway ID, source job/attempt ID and parser version.
+- Result status and data-quality/validation metadata.
+
+The daily history rule is **one current/latest accepted value per device per day**, not one row per SMS attempt. When a later valid check for the same device arrives on the same day, it updates that day's current value and its checked-at timestamp. The service may retain a separate restricted audit/attempt log for troubleshooting, but that log must not be confused with the user-facing daily history table.
+
+A late response must never overwrite a newer daily value merely because it arrived later. The acceptance policy must compare transaction identity and timestamps, and reject/quarantine responses that cannot be safely attributed. Store both the time the 3030 result reports (if supplied) and the time the gateway received it; do not assume these are identical.
+
+### 14.2 Shared history for clients that did not request the check
+
+History belongs to the shared gateway service, not to the phone that initiated a request. Therefore an authorized DevMonitor client can request the history for a device even if that client has never requested an SMS check for that device.
+
+Proposed read contract:
+
+```http
+GET /v1/client/devices/{device_id}/sms-history?from=YYYY-MM-DD&to=YYYY-MM-DD
+Authorization: Bearer <user-access-token>
+```
+
+The controller returns the authorized daily records, including the last checked time and whether the value is the latest available for that day. The client should render this in the existing SMS Checker History table conventions.
+
+This is shared service history, **not public history**. Before returning a record, the server must verify that the authenticated user/tenant is entitled to view that device under the configured company/partner access rules. A device code supplied by a client is not authorization.
+
+### 14.3 Cached value and fresh-check request are separate operations
+
+The client should be able to obtain the last available value immediately while independently requesting a fresh 3030 check.
+
+Suggested flow:
+
+1. Client requests the latest cached result for a device.
+2. Controller returns the last accepted value, its original checked-at timestamp, and a clear freshness label.
+3. Client may then submit a separate fresh-check request.
+4. The fresh request enters the shared queue and returns a job ID.
+5. The existing cached result remains visible while the new job is queued/running.
+6. When a new valid result is accepted, the service updates the cache and that day's latest history record, then notifies/presents the new checked-at time.
+
+Suggested cache read:
+
+```http
+GET /v1/client/devices/{device_id}/sms-latest
+Authorization: Bearer <user-access-token>
+```
+
+The response should distinguish at least:
+- `CACHED`: last accepted result; not freshly checked by this request.
+- `FRESH`: result produced by the requested job.
+- `NO_DATA`: no accepted gateway result exists yet.
+- `STALE`: a cached result exists but is older than the configured freshness target.
+
+Freshness must be based on the stored checked-at timestamp, not on when the client downloaded the cache. The UI must never make cached data look like a live response. A cache hit does not silently create an SMS job; fresh checking is an explicit separate request.
+
+### 14.4 Shared multi-gateway work queue
+
+All fresh-check requests enter one durable controller queue. Gateway phones do not maintain competing independent queues and do not choose arbitrary device work.
+
+- Gateway X, Y and Z register as separate workers.
+- Each worker claims the next eligible job when it is ready.
+- The controller assigns work according to availability, health, current workload, configured SIM/carrier rate limits and fairness policy.
+- Initially, each physical gateway phone/SIM may hold only one unresolved SMS transaction at a time because 3030 replies do not echo the queried device code.
+- While X is waiting for its 3030 response, Y and Z can process other jobs independently.
+- When X safely completes or resolves its transaction, it claims another queued job.
+- Requests are queued when all eligible gateways are busy or unavailable.
+- The controller prevents two gateways from needlessly checking the same device at the same time. It may coalesce equivalent pending fresh-check requests into one job when access scope, query profile and timing rules permit, then make the accepted result available to all authorized requesters.
+- The controller applies fair scheduling so one user or tenant cannot monopolize all gateway capacity. Priority rules, if introduced, must be explicit and auditable.
+
+The scheduler must not interpret a timed-out ambiguous transaction as free capacity. A gateway with an unresolved/late-response risk is quarantined from new SMS work, while healthy gateways continue processing their own assigned jobs.
+
+### 14.5 Cache and queue data model additions
+
+Add the following logical records/fields to the data model:
+
+- **DeviceDailyLatest:** canonical device ID, business date, latest accepted normalized result, checked-at timestamp, received-at timestamp, source job/attempt, gateway ID and parser version. Enforce a unique key on (authorized scope, canonical device ID, business date).
+- **DeviceLatestSnapshot:** optional materialized pointer/value for fast latest-result reads, derived only from accepted daily records.
+- **GatewayQueue:** durable queued jobs with idempotency/coalescing key, owner/scope, target device, query profile, priority, enqueue time and state.
+- **GatewayLease:** assigned gateway, job/attempt, lease token, lease expiry and worker heartbeat.
+- **ResultAccess/AuditEvent:** record authorized history/cache reads and result distribution where needed for accountability.
+
+Daily history retention must follow the product's approved retention policy. The gateway's central cache may serve multiple clients, but authorization and tenant boundaries must be enforced on every read and write. Do not copy a result into a user's scope unless that user is entitled to the underlying device data.
+
+### 14.6 Additional acceptance criteria
+
+The shared data-service milestone is not complete until tests prove that:
+
+1. A successful result is stored with the correct canonical device ID and exact checked-at timestamp.
+2. A second valid check on the same day updates that day's latest value without creating a second user-facing daily row.
+3. A client that did not initiate the check can read the history if, and only if, it is authorized for that device.
+4. A client can display cached data immediately and separately request a fresh check.
+5. Cached results remain visibly timestamped and are never labelled as fresh.
+6. Three gateway phones can consume one shared queue; while one waits for 3030, the others can process their own jobs.
+7. When all gateways are busy, new requests remain queued and are not lost.
+8. Duplicate equivalent requests can be safely coalesced without crossing authorization scopes.
+9. A quarantined gateway receives no new SMS job, while healthy gateways continue.
+10. Restarting the controller or a gateway does not lose daily history, queued work or active-transaction safety state.
+
