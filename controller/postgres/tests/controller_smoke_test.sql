@@ -185,6 +185,7 @@ BEGIN
        OR cancel_row.batch_status <> 'RUNNING' THEN
         RAISE EXCEPTION 'request cancellation did not preserve the ambiguous attempt';
     END IF;
+    INSERT INTO dm_controller_operators(user_id) VALUES (user_a);
     accepted := dm_operator_resolve_ambiguous_attempt(
         claim_b.attempt_id,user_a,'REQUEUE_AFTER_INBOX_CLEARED',
         'Test operator verified the old Gateway inbox is resolved.');
@@ -276,7 +277,6 @@ BEGIN
     IF (SELECT state FROM dm_check_jobs WHERE id=retry_claim.job_id) <> 'AMBIGUOUS' THEN
         RAISE EXCEPTION 'post-send expiry did not mark job ambiguous';
     END IF;
-    INSERT INTO dm_controller_operators(user_id) VALUES (user_a);
     accepted := dm_operator_resolve_ambiguous_attempt(
         retry_claim.attempt_id,user_a,'REQUEUE_AFTER_INBOX_CLEARED',
         'Test operator verified the old inbox transaction is fully resolved.');
