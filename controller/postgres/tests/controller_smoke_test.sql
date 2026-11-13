@@ -38,13 +38,14 @@ BEGIN
     -- Five request batches: 15, 35, 20, 10 and 5 devices.
     FOR batch_no IN 1..5 LOOP
         INSERT INTO dm_check_batches(
-            tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint
+            tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint,created_at
         ) VALUES (
             tenant_a,
             CASE WHEN batch_no IN (1,3,5) THEN user_a ELSE user_b END,
             'multi-gateway-'||batch_no,'GATEWAY',
             CASE batch_no WHEN 1 THEN 15 WHEN 2 THEN 35 WHEN 3 THEN 20 WHEN 4 THEN 10 ELSE 5 END,
-            digest('multi-gateway-'||batch_no,'sha256')
+            digest('multi-gateway-'||batch_no,'sha256'),
+            now()+make_interval(secs=>batch_no)
         ) RETURNING id INTO batch_id;
         batch_ids := array_append(batch_ids,batch_id);
         INSERT INTO dm_tenant_device_access(tenant_id,canonical_device_id)
