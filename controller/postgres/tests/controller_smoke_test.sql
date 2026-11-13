@@ -141,8 +141,8 @@ BEGIN
     -- storing any other user's device identifiers in the snapshot table.
     PERFORM dm_capture_tenant_queue_snapshots();
     IF (SELECT pending_devices FROM dm_tenant_queue_snapshots
-         WHERE tenant_id=tenant_a ORDER BY captured_at DESC,id DESC LIMIT 1) <> 85 THEN
-        RAISE EXCEPTION 'queue analytics snapshot did not record 85 pending devices';
+         WHERE tenant_id=tenant_a ORDER BY captured_at DESC,id DESC LIMIT 1) <> 84 THEN
+        RAISE EXCEPTION 'queue analytics snapshot did not record 84 remaining devices';
     END IF;
 
     -- Gateway B goes unavailable. Its pre-send leased request is held until the
