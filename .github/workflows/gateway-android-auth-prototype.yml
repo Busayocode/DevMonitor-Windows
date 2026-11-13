@@ -41,10 +41,51 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Run unit tests
+      # A disposable CI-only Firebase config allows compile checks without
+      # committing project credentials. It cannot authenticate a real account.
+      - name: Create CI-only Firebase config
+        working-directory: prototypes/gateway-auth-android
+        run: |
+          mkdir -p gateway-app
+          cat > gateway-app/google-services.json <<'JSON'
+          {
+            "project_info": {
+              "project_number": "123456789012",
+              "project_id": "devmonitor-gateway-ci",
+              "storage_bucket": "devmonitor-gateway-ci.appspot.com"
+            },
+            "client": [{
+              "client_info": {
+                "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef",
+                "android_client_info": {
+                  "package_name": "com.aziitech.devmonitor.gateway"
+                }
+              },
+              "oauth_client": [{
+                "client_id": "123456789012-ci.apps.googleusercontent.com",
+                "client_type": 3
+              }],
+              "api_key": [{
+                "current_key": "AIzaSyDUMMY-CI-ONLY-NOT-A-REAL-KEY"
+              }],
+              "services": {
+                "appinvite_service": {
+                  "other_platform_oauth_client": []
+                }
+              }
+            }],
+            "configuration_version": "1"
+          }
+          JSON
+
+      - name: Run Firebase auth adapter unit tests
         working-directory: prototypes/gateway-auth-android
         run: gradle :gateway-auth-android:testDebugUnitTest
 
-      - name: Assemble Android library
+      - name: Assemble Gateway Android app
+        working-directory: prototypes/gateway-auth-android
+        run: gradle :gateway-app:assembleDebug
+
+      - name: Assemble Firebase auth library
         working-directory: prototypes/gateway-auth-android
         run: gradle :gateway-auth-android:assembleDebug
