@@ -10,6 +10,8 @@ This folder contains the first durable-controller database/API foundation for De
 - `postgres/V002__gateway_controller_hardening.sql` — device access grants, personal gateway registration, owner-controlled pool opt-in/out, send-state transitions and conservative expired-lease recovery.
 - `postgres/V003__claim_locking_and_ambiguous_resolution.sql` — explicit row locking for cross-gateway claims, active device-entitlement enforcement and audited manual resolution of ambiguous attempts.
 - `postgres/V004__profile_specific_reply_timeouts.sql` — preserves the existing 120-second standard wait and 180-second Partner wait as server-selected query-profile values.
+- `postgres/V005__operator_authorization.sql` — requires an explicit controller-operator role for ambiguous-attempt resolution and quarantine release.
+- `postgres/V006__batch_integrity_and_gateway_revocation.sql` — binds each job to the exact batch tenant/requester, requires a SHA-256 request fingerprint for new batches, and supports owner-authorized gateway revocation.
 - `api/openapi.yaml` — proposed HTTPS contract for clients, personal gateway management and gateway workers.
 
 ## Database choice
@@ -26,6 +28,8 @@ Apply to a fresh, dedicated PostgreSQL database in this exact order:
 2. `V002__gateway_controller_hardening.sql`
 3. `V003__claim_locking_and_ambiguous_resolution.sql`
 4. `V004__profile_specific_reply_timeouts.sql`
+5. `V005__operator_authorization.sql`
+6. `V006__batch_integrity_and_gateway_revocation.sql`
 
 The migrations require PostgreSQL with the `pgcrypto` extension available. Do not apply them to a production database until they have passed integration tests on the selected PostgreSQL version.
 
@@ -33,7 +37,7 @@ The migrations require PostgreSQL with the `pgcrypto` extension available. Do no
 
 - User JWT validation happens in the HTTPS service. It maps the verified identity-provider subject to `dm_users.id`.
 - Gateway bearer credentials are random installation credentials. The database stores only their SHA-256 hashes. The raw token is returned once at registration and must be stored in Android Keystore; never log it.
-- The API must resolve a gateway bearer token to a gateway ID before calling database functions. Never accept a gateway ID from a request body as authentication.
+- The API must resolve a gateway bearer token to a gateway ID before calling database functions. Never accept a gateway ID from a request body as authentication. A revoked gateway credential must be rejected even if the phone later sends a heartbeat.
 - Tenant membership and active device grants are checked on every batch creation and cache/history read.
 - Personal gateway ownership is enforced by a database trigger as well as API authorization.
 - Only the owner's authenticated API can toggle that gateway's pool participation.
@@ -62,7 +66,7 @@ The HTTP service must:
 5. Insert one job per device in the same database transaction and set the batch total.
 6. Commit before returning HTTP 202.
 
-A replay with the same idempotency key must return the original batch. A different payload under the same key must be rejected, not silently merged.
+A replay with the same idempotency key must return the original batch only when its canonical request fingerprint matches. A different payload under the same key must be rejected, not silently merged.
 
 ## Required server transaction for result retrieval
 
