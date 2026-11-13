@@ -114,7 +114,7 @@ private fun job(
     requesterId=requester,
     canonicalDeviceId=device,
     queryProfile="standard",
-    enqueuedAt=Instant.parse("2026-11-13T10:00:00Z").plusMillis(key.hashCode().toLong().absoluteValue),
+    enqueuedAt=Instant.parse("2026-11-13T10:00:00Z"),
     idempotencyKey=key,
     preferredGatewayId=preferred
 )
