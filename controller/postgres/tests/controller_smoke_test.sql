@@ -190,6 +190,10 @@ BEGIN
         claim_b.attempt_id,user_a,'REQUEUE_AFTER_INBOX_CLEARED',
         'Test operator verified the old Gateway inbox is resolved.');
     IF NOT accepted THEN RAISE EXCEPTION 'operator could not resolve Gateway B ambiguous attempt'; END IF;
+    IF (SELECT status FROM dm_check_batches WHERE id=batch_ids[2]) <> 'CANCELLED'
+       OR (SELECT state FROM dm_check_jobs WHERE id=claim_b.job_id) <> 'CANCELLED' THEN
+        RAISE EXCEPTION 'resolved ambiguous device was not cancelled after user cancellation';
+    END IF;
     accepted := dm_operator_resolve_gateway_quarantine(
         gateway_b,user_a,'Test operator confirmed Gateway B inbox cleared and safe.');
     IF NOT accepted THEN RAISE EXCEPTION 'operator could not release Gateway B quarantine'; END IF;
