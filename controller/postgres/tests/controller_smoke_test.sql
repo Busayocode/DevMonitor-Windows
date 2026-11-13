@@ -82,7 +82,7 @@ BEGIN
 
     SELECT count(*) INTO ahead_count
       FROM dm_check_jobs j JOIN dm_check_batches b ON b.id=j.batch_id
-     WHERE b.assigned_gateway_id=gateway_a AND b.id=batch_ids[3]
+     WHERE b.assigned_gateway_id=gateway_a
        AND b.id<>batch_ids[3]
        AND b.created_at < (SELECT created_at FROM dm_check_batches WHERE id=batch_ids[3])
        AND j.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS');
@@ -131,6 +131,7 @@ BEGIN
     VALUES (batch_id,tenant_a,user_a,'CACHE-DEVICE','standard',gateway_personal);
     PERFORM dm_rebalance_unstarted_batches();
     SELECT * INTO claim_row FROM dm_claim_next_job(gateway_personal);
+    cache_first_job := claim_row.job_id;
     accepted := dm_mark_attempt_sending(gateway_personal,claim_row.job_id,claim_row.attempt_id,claim_row.lease_token);
     IF NOT accepted THEN RAISE EXCEPTION 'could not start first cache attempt'; END IF;
     accepted := dm_mark_attempt_awaiting_reply(gateway_personal,claim_row.job_id,claim_row.attempt_id,
@@ -162,11 +163,8 @@ BEGIN
     IF NOT accepted THEN RAISE EXCEPTION 'delayed cache result was not accepted'; END IF;
     IF (SELECT job_id FROM dm_daily_sms_results
          WHERE tenant_id=tenant_a AND canonical_device_id='CACHE-DEVICE'
-           AND business_date=CURRENT_DATE) IS DISTINCT FROM first_job
-       AND (SELECT job_id FROM dm_daily_sms_results
-             WHERE tenant_id=tenant_a AND canonical_device_id='CACHE-DEVICE'
-               AND business_date=CURRENT_DATE) IS NULL THEN
-        RAISE EXCEPTION 'daily cache unexpectedly missing';
+           AND business_date=CURRENT_DATE) IS DISTINCT FROM cache_first_job THEN
+        RAISE EXCEPTION 'older delayed response overwrote the newer daily cache row';
     END IF;
     IF (SELECT values_json->>'todayCount' FROM dm_daily_sms_results
          WHERE tenant_id=tenant_a AND canonical_device_id='CACHE-DEVICE'
