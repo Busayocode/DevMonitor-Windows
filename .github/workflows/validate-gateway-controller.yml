@@ -97,6 +97,20 @@ jobs:
           PYTHONPATH=controller/service python -m compileall -q controller/service
           PYTHONPATH=controller/service python -m pytest -q controller/service/tests
 
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.12
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+
+      - name: Compile and run Kotlin gateway scheduler smoke tests
+        run: gradle -p prototypes/gateway-core smokeTest
+
       - name: Wait for PostgreSQL
         run: |
           for attempt in $(seq 1 30); do
