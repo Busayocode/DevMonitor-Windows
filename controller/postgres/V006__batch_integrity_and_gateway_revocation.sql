@@ -5,8 +5,9 @@ ALTER TABLE dm_check_batches
     ADD COLUMN IF NOT EXISTS request_fingerprint BYTEA;
 
 -- Jobs cannot be attached to a batch belonging to another tenant or requester.
-CREATE UNIQUE INDEX IF NOT EXISTS dm_batches_identity_scope_uq
-    ON dm_check_batches (id, tenant_id, requested_by_user_id);
+ALTER TABLE dm_check_batches
+    ADD CONSTRAINT dm_batches_identity_scope_uq
+    UNIQUE (id, tenant_id, requested_by_user_id);
 
 ALTER TABLE dm_check_jobs
     ADD CONSTRAINT dm_check_job_batch_scope_fk
