@@ -69,6 +69,15 @@ fun main() {
     val privateOwnerJob = privateOnly.enqueue(job("owner", "private-owner", preferred="PRIVATE-ONLY"))
     check(privateOnly.claimNext("PRIVATE-ONLY")?.job?.id == privateOwnerJob.id)
 
+
+    // A healthy personal gateway reserves its owner's job from other pool workers.
+    val reserved = GatewayJobCoordinator(InMemoryDailyResultStore())
+    reserved.register(GatewayWorker("OWNER", ownerAccessScope="owner"))
+    reserved.register(GatewayWorker("OTHER-POOL"))
+    val reservedJob = reserved.enqueue(job("owner", "reserved-owner", preferred="OWNER"))
+    check(reserved.claimNext("OTHER-POOL") == null)
+    check(reserved.claimNext("OWNER")?.job?.id == reservedJob.id)
+
     // If the preferred personal gateway is offline, another pool worker may fail over.
     val fallback = GatewayJobCoordinator(InMemoryDailyResultStore())
     fallback.register(GatewayWorker("OWNER-PHONE", health=GatewayHealth.OFFLINE, ownerAccessScope="owner"))
