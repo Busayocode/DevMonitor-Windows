@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime
 from typing import Any
 from uuid import UUID
@@ -24,15 +26,34 @@ OIDC_ISSUER = os.getenv("OIDC_ISSUER")
 OIDC_AUDIENCE = os.getenv("OIDC_AUDIENCE")
 OIDC_JWKS_URL = os.getenv("OIDC_JWKS_URL")
 
+logger = logging.getLogger('devmonitor.gateway.controller')
 db_pool: ConnectionPool | None = None
 jwks_client: PyJWKClient | None = None
 user_bearer = HTTPBearer(auto_error=False)
 gateway_bearer = HTTPBearer(auto_error=False)
 
 
+async def expired_lease_reaper() -> None:
+    while True:
+        await asyncio.sleep(max(5, int(os.getenv("REAPER_INTERVAL_SECONDS", "15"))))
+        pool = db_pool
+        if pool is None:
+            continue
+        try:
+            def run_once():
+                with pool.connection() as connection:
+                    return connection.execute("SELECT * FROM dm_reap_expired_attempts()").fetchone()
+            counts = await asyncio.to_thread(run_once)
+            if counts and (counts["requeued_jobs"] or counts["quarantined_gateways"]):
+                logger.warning("Gateway lease recovery: %s", counts)
+        except Exception:
+            logger.exception("Gateway lease recovery pass failed")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global db_pool, jwks_client
+    reaper_task = None
     if DATABASE_URL:
         db_pool = ConnectionPool(
             conninfo=DATABASE_URL,
@@ -42,20 +63,19 @@ async def lifespan(_: FastAPI):
             open=False,
         )
         db_pool.open(wait=True)
+        reaper_task = asyncio.create_task(expired_lease_reaper())
     if OIDC_JWKS_URL:
         jwks_client = PyJWKClient(OIDC_JWKS_URL, cache_keys=True)
-    yield
-    if db_pool is not None:
-        db_pool.close()
-        db_pool = None
-
-
-app = FastAPI(
-    title="DevMonitor Gateway Controller",
-    version="0.1.0",
-    description="Reference controller API. Configure PostgreSQL and an OIDC identity provider before use.",
-    lifespan=lifespan,
-)
+    try:
+        yield
+    finally:
+        if reaper_task is not None:
+            reaper_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await reaper_task
+        if db_pool is not None:
+            db_pool.close()
+            db_pool = None
 
 
 class DeviceRequest(BaseModel):
