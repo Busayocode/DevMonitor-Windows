@@ -12,7 +12,7 @@ DECLARE
     assigned UUID; assigned_2 UUID; assigned_3 UUID; assigned_4 UUID; assigned_5 UUID;
     claim_row RECORD; claim_b RECORD; retry_claim RECORD; reaper_row RECORD; cancel_row RECORD;
     attempt_id UUID; lease_token TEXT; accepted BOOLEAN;
-    ahead_count BIGINT;
+    ahead_count BIGINT; batch_no INTEGER; cache_first_job UUID;
 BEGIN
     INSERT INTO dm_users(auth_subject) VALUES ('gateway-queue-test-user-a') RETURNING id INTO user_a;
     INSERT INTO dm_users(auth_subject) VALUES ('gateway-queue-test-user-b') RETURNING id INTO user_b;
