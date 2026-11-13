@@ -5,7 +5,7 @@ This is the reference FastAPI service for the DevMonitor 5.0 controller. It is s
 ## Local run
 
 1. Create a dedicated PostgreSQL database.
-2. Apply the migrations in `../postgres/` in numeric order, V001 through V011.
+2. Apply the migrations in `../postgres/` in numeric order, V001 through V012.
 3. Copy `.env.example` to a private environment file and set:
    - `DATABASE_URL` to the controller database.
    - `FIREBASE_PROJECT_ID` to the exact Project ID shown in Firebase Console > Project settings > General.
@@ -34,7 +34,7 @@ Firebase Authentication is the selected identity provider. The existing `Fieldpu
 - Users can cancel their own batch. Queued and pre-send leased jobs are stopped; an SMS already in progress or ambiguous is not forcibly interrupted. Completed results remain available.
 - Tenant OWNER/ADMIN users can read aggregate Gateway analytics for their tenant. The current API reports request/device totals, cancellation/timeout/success rates, median queue/reply times, current Gateway health and 30-day activity.
 - The service maps query profiles containing `partner` to the existing 180-second Partner wait; other standard profiles use 120 seconds.
-- A background reaper runs every 15 seconds by default. Pre-send expired leases may be safely requeued; possible-send expiries become AMBIGUOUS and quarantine the phone.
+- A background reaper runs every 15 seconds by default. It marks stale READY Gateways OFFLINE after 90 seconds without a heartbeat and redistributes unstarted batches; pre-send expired leases may be safely requeued, while possible-send expiries become AMBIGUOUS and quarantine the phone.
 - Batch status is derived from its per-device job states so ambiguous work remains visibly RUNNING until operator resolution.
 - The server never returns a lease token from the active-attempt recovery endpoint. Gateway installations must persist it securely; if lost, the attempt must be treated as ambiguous.
 
