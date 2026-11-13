@@ -274,7 +274,7 @@ CREATE OR REPLACE FUNCTION dm_set_gateway_pool_participation(
     p_gateway_id UUID,
     p_enabled BOOLEAN
 )
-RETURNS BOOLEAN LANGUAGE plpgsql AS $
+RETURNS BOOLEAN LANGUAGE plpgsql AS $$
 BEGIN
     UPDATE dm_gateways
        SET accept_pool_jobs=p_enabled,updated_at=now()
@@ -294,7 +294,7 @@ CREATE OR REPLACE FUNCTION dm_revoke_personal_gateway(
     p_owner_user_id UUID,
     p_gateway_id UUID
 )
-RETURNS BOOLEAN LANGUAGE plpgsql AS $
+RETURNS BOOLEAN LANGUAGE plpgsql AS $$
 BEGIN
     UPDATE dm_gateways
        SET revoked_at=now(),health_state='OFFLINE',
