@@ -78,6 +78,62 @@ paths:
       responses:
         "200": { description: Authorized batch state. }
         "404": { description: Batch not found in the caller's authorized tenant. }
+  /v1/client/check-batches/{batch_id}/queue:
+    get:
+      tags: [Client]
+      summary: Read live queue position and estimated wait/completion
+      security:
+        - UserBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BatchId"
+        - in: query
+          name: tenant_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Authorized queue snapshot. Includes assigned Gateway, requests/devices ahead, global pending device count and approximate start/completion estimates. }
+        "404": { description: Batch not found for the authenticated requester. }
+  /v1/client/check-batches/{batch_id}/cancel:
+    post:
+      tags: [Client]
+      summary: Cancel the caller's own request
+      description: Queued and pre-send leased jobs are cancelled. A send already in progress or an ambiguous SMS attempt is allowed to resolve safely; completed results are retained.
+      security:
+        - UserBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BatchId"
+        - in: query
+          name: tenant_id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason: { type: [string, "null"], maxLength: 240 }
+      responses:
+        "200": { description: Cancellation accepted or request already terminal. Returns completed, cancelled and in-flight counts. }
+        "404": { description: Batch not found for the authenticated requester. }
+  /v1/client/tenants/{tenant_id}/gateway-analytics:
+    get:
+      tags: [Client]
+      summary: Read tenant administrator Gateway analytics
+      description: Aggregate tenant-scoped request, device, wait, response, timeout, cancellation and Gateway health metrics. Only tenant OWNER or ADMIN members may read it.
+      security:
+        - UserBearerAuth: []
+      parameters:
+        - in: path
+          name: tenant_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Tenant-scoped Gateway analytics and 30-day daily activity. }
+        "403": { description: Tenant administrator access required. }
+        "404": { description: Tenant not found. }
   /v1/client/devices/{device_id}/latest:
     get:
       tags: [Client]
