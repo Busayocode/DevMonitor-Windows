@@ -118,9 +118,23 @@ BEGIN
         RAISE EXCEPTION 'Gateway B did not start request 2 after becoming ready';
     END IF;
 
+    -- Historical analytics snapshot captures the live shared workload without
+    -- storing any other user's device identifiers in the snapshot table.
+    PERFORM dm_capture_tenant_queue_snapshots();
+    IF (SELECT pending_devices FROM dm_tenant_queue_snapshots
+         WHERE tenant_id=tenant_a ORDER BY captured_at DESC,id DESC LIMIT 1) <> 85 THEN
+        RAISE EXCEPTION 'queue analytics snapshot did not record 85 pending devices';
+    END IF;
+
     -- Gateway B goes unavailable. Its pre-send leased request is held until the
     -- lease is safely reaped; unstarted request 4 is immediately reassigned to A.
-    PERFORM dm_record_gateway_heartbeat(gateway_b,'test',FALSE,FALSE,FALSE,NULL);
+    UPDATE dm_gateways SET heartbeat_at=now()-INTERVAL '2 minutes' WHERE id=gateway_b;
+    IF dm_mark_stale_gateways_offline() <> 1 THEN
+        RAISE EXCEPTION 'stale Gateway heartbeat was not detected';
+    END IF;
+    IF (SELECT health_state FROM dm_gateways WHERE id=gateway_b) <> 'OFFLINE' THEN
+        RAISE EXCEPTION 'stale Gateway was not marked offline';
+    END IF;
     IF (SELECT assigned_gateway_id FROM dm_check_batches WHERE id=batch_ids[4]) IS DISTINCT FROM gateway_a THEN
         RAISE EXCEPTION 'unstarted request 4 was not reassigned after Gateway B went offline';
     END IF;
