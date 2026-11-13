@@ -5,37 +5,20 @@ import java.time.LocalDate
 import java.util.UUID
 import java.util.ArrayDeque
 
-/** Normalized 3030 values. Nullable fields preserve exactly what the parser received. */
-data class SmsValues(
-    val todayCount: Int?,
-    val mtdCount: Int?,
-    val active: Int?,
-    val bar48: Int?,
-    val bar96: Int?,
-    val duplicates: Int?,
-    val monthlyTarget: Int?
-)
+data class SmsValues(val todayCount: Int?, val mtdCount: Int?, val active: Int?, val bar48: Int?, val bar96: Int?, val duplicates: Int?, val monthlyTarget: Int?)
 
 data class DailySmsResult(
-    val accessScope: String,
-    val canonicalDeviceId: String,
-    val businessDate: LocalDate,
-    val checkedAt: Instant,
-    val receivedAt: Instant,
-    val values: SmsValues,
-    val gatewayId: String,
-    val jobId: String,
-    val attemptId: String,
-    val parserVersion: String
+    val accessScope: String, val canonicalDeviceId: String, val businessDate: LocalDate,
+    val checkedAt: Instant, val receivedAt: Instant, val values: SmsValues,
+    val gatewayId: String, val jobId: String, val attemptId: String, val parserVersion: String
 )
 
 data class CheckJob(
     val id: String = UUID.randomUUID().toString(),
-    val accessScope: String,
-    val canonicalDeviceId: String,
-    val queryProfile: String,
-    val enqueuedAt: Instant,
-    val idempotencyKey: String
+    val accessScope: String, val canonicalDeviceId: String, val queryProfile: String,
+    val enqueuedAt: Instant, val idempotencyKey: String,
+    /** Optional owner-paired gateway; validated against registered gateway ownership. */
+    val preferredGatewayId: String? = null
 )
 
 enum class GatewayHealth { READY, OFFLINE, NOT_READY, QUARANTINED }
@@ -43,91 +26,90 @@ enum class GatewayHealth { READY, OFFLINE, NOT_READY, QUARANTINED }
 data class GatewayWorker(
     val id: String,
     var health: GatewayHealth = GatewayHealth.READY,
-    var activeJobId: String? = null
+    var activeJobId: String? = null,
+    val ownerAccessScope: String? = null,
+    var acceptPoolJobs: Boolean = true
 )
 
-data class JobLease(
-    val job: CheckJob,
-    val gatewayId: String,
-    val leaseToken: String,
-    val attemptId: String
-)
-
+data class JobLease(val job: CheckJob, val gatewayId: String, val leaseToken: String, val attemptId: String)
 enum class JobState { QUEUED, LEASED, COMPLETED, AMBIGUOUS }
 
-/** Persistence boundary. Production implementation must be durable and transaction-safe. */
 interface DailyResultStore {
     fun upsertLatestForDay(result: DailySmsResult)
     fun latest(accessScope: String, canonicalDeviceId: String): DailySmsResult?
     fun history(accessScope: String, canonicalDeviceId: String, from: LocalDate, to: LocalDate): List<DailySmsResult>
 }
 
-/** In-memory adapter for deterministic prototype tests only; not production persistence. */
+/** Volatile adapter for deterministic prototype tests only. */
 class InMemoryDailyResultStore : DailyResultStore {
     private val rows = mutableMapOf<Triple<String, String, LocalDate>, DailySmsResult>()
-
-    @Synchronized
-    override fun upsertLatestForDay(result: DailySmsResult) {
+    @Synchronized override fun upsertLatestForDay(result: DailySmsResult) {
         val key = Triple(result.accessScope, result.canonicalDeviceId, result.businessDate)
         val old = rows[key]
-        // A delayed/older check must not replace a newer accepted daily value.
         if (old == null || result.checkedAt.isAfter(old.checkedAt)) rows[key] = result
     }
-
-    @Synchronized
-    override fun latest(accessScope: String, canonicalDeviceId: String): DailySmsResult? =
-        rows.values.filter { it.accessScope == accessScope && it.canonicalDeviceId == canonicalDeviceId }
-            .maxByOrNull { it.checkedAt }
-
-    @Synchronized
-    override fun history(accessScope: String, canonicalDeviceId: String, from: LocalDate, to: LocalDate): List<DailySmsResult> =
-        rows.values.filter {
-            it.accessScope == accessScope && it.canonicalDeviceId == canonicalDeviceId &&
-                !it.businessDate.isBefore(from) && !it.businessDate.isAfter(to)
-        }.sortedBy { it.businessDate }
+    @Synchronized override fun latest(accessScope: String, canonicalDeviceId: String): DailySmsResult? =
+        rows.values.filter { it.accessScope == accessScope && it.canonicalDeviceId == canonicalDeviceId }.maxByOrNull { it.checkedAt }
+    @Synchronized override fun history(accessScope: String, canonicalDeviceId: String, from: LocalDate, to: LocalDate): List<DailySmsResult> =
+        rows.values.filter { it.accessScope == accessScope && it.canonicalDeviceId == canonicalDeviceId &&
+            !it.businessDate.isBefore(from) && !it.businessDate.isAfter(to) }.sortedBy { it.businessDate }
 }
 
 /**
- * Single-process reference scheduler. A real controller must implement the same invariants
- * with a durable transactional queue, server-side authorization and distributed leases.
+ * Single-process reference scheduler. Production requires durable transactional storage and
+ * server-derived ownership. Owner jobs take priority on their paired gateway; shared jobs
+ * rotate fairly across access scopes. Active SMS transactions are never preempted.
  */
 class GatewayJobCoordinator(private val resultStore: DailyResultStore) {
     private val workers = linkedMapOf<String, GatewayWorker>()
-    private val queue = ArrayDeque<CheckJob>()
+    private val queuesByScope = linkedMapOf<String, ArrayDeque<CheckJob>>()
+    private val scopeRotation = mutableListOf<String>()
+    private var nextScopeIndex = 0
     private val leases = mutableMapOf<String, JobLease>()
     private val states = mutableMapOf<String, JobState>()
     private val jobsById = mutableMapOf<String, CheckJob>()
     private val idempotency = mutableMapOf<Pair<String, String>, String>()
 
-    @Synchronized
-    fun register(worker: GatewayWorker) { workers[worker.id] = worker }
+    @Synchronized fun register(worker: GatewayWorker) {
+        val old = workers[worker.id]
+        require(old == null || old.activeJobId == null) { "Cannot replace a gateway with an active job" }
+        workers[worker.id] = worker
+    }
 
-    @Synchronized
-    fun setHealth(gatewayId: String, health: GatewayHealth) {
+    @Synchronized fun setPoolParticipation(gatewayId: String, enabled: Boolean) {
+        requireNotNull(workers[gatewayId]) { "Unknown gateway" }.acceptPoolJobs = enabled
+    }
+
+    @Synchronized fun setHealth(gatewayId: String, health: GatewayHealth) {
         val worker = requireNotNull(workers[gatewayId]) { "Unknown gateway" }
-        // A quarantined channel cannot be made READY by an ordinary heartbeat.
         if (worker.health == GatewayHealth.QUARANTINED && health == GatewayHealth.READY) return
         worker.health = health
     }
 
-    @Synchronized
-    fun enqueue(job: CheckJob): CheckJob {
+    @Synchronized fun enqueue(job: CheckJob): CheckJob {
         val key = job.accessScope to job.idempotencyKey
-        val existingId = idempotency[key]
-        if (existingId != null) return findJob(existingId)
+        idempotency[key]?.let { return findJob(it) }
+        job.preferredGatewayId?.let { id ->
+            val owner = requireNotNull(workers[id]) { "Unknown preferred gateway" }
+            require(owner.ownerAccessScope == job.accessScope) { "Preferred gateway is not owned by this access scope" }
+        }
         idempotency[key] = job.id
         jobsById[job.id] = job
-        queue.addLast(job)
+        queuesByScope.getOrPut(job.accessScope) {
+            scopeRotation.add(job.accessScope)
+            ArrayDeque()
+        }.addLast(job)
         states[job.id] = JobState.QUEUED
         return job
     }
 
-    /** Assign the oldest queued job to the first ready idle gateway. */
-    @Synchronized
-    fun claimNext(gatewayId: String): JobLease? {
+    /** Owner jobs first, then shared jobs using round-robin tenant scheduling. */
+    @Synchronized fun claimNext(gatewayId: String): JobLease? {
         val worker = requireNotNull(workers[gatewayId]) { "Unknown gateway" }
         if (worker.health != GatewayHealth.READY || worker.activeJobId != null) return null
-        val job = queue.pollFirst() ?: return null
+        val personal = pollPersonalJob(worker)
+        val job = personal ?: if (worker.acceptPoolJobs) pollFairSharedJob(worker) else null
+        if (job == null) return null
         val lease = JobLease(job, gatewayId, UUID.randomUUID().toString(), UUID.randomUUID().toString())
         leases[job.id] = lease
         states[job.id] = JobState.LEASED
@@ -135,9 +117,7 @@ class GatewayJobCoordinator(private val resultStore: DailyResultStore) {
         return lease
     }
 
-    /** Only the gateway holding the live lease may complete the assigned target. */
-    @Synchronized
-    fun complete(lease: JobLease, result: DailySmsResult): Boolean {
+    @Synchronized fun complete(lease: JobLease, result: DailySmsResult): Boolean {
         val current = leases[lease.job.id] ?: return false
         if (current.leaseToken != lease.leaseToken || current.gatewayId != lease.gatewayId) return false
         if (result.jobId != lease.job.id || result.attemptId != lease.attemptId ||
@@ -150,39 +130,85 @@ class GatewayJobCoordinator(private val resultStore: DailyResultStore) {
         return true
     }
 
-    /** A timeout is ambiguous because 3030 does not echo the queried device code. */
-    @Synchronized
-    fun markTimedOutAmbiguous(lease: JobLease): Boolean {
+    /** Ambiguous because 3030 replies do not echo the queried device code. */
+    @Synchronized fun markTimedOutAmbiguous(lease: JobLease): Boolean {
         val current = leases[lease.job.id] ?: return false
         if (current.leaseToken != lease.leaseToken) return false
         states[lease.job.id] = JobState.AMBIGUOUS
         leases.remove(lease.job.id)
-        workers[lease.gatewayId]?.apply {
-            activeJobId = null
-            health = GatewayHealth.QUARANTINED
-        }
-        // Intentionally do not put this job back into the queue or reassign it automatically.
+        workers[lease.gatewayId]?.apply { activeJobId = null; health = GatewayHealth.QUARANTINED }
         return true
     }
 
-    /** Explicit operator recovery only; a quiet period alone is not proof of correlation. */
-    @Synchronized
-    fun releaseQuarantineAfterOperatorResolution(gatewayId: String) {
+    @Synchronized fun releaseQuarantineAfterOperatorResolution(gatewayId: String) {
         val worker = requireNotNull(workers[gatewayId]) { "Unknown gateway" }
         require(worker.health == GatewayHealth.QUARANTINED) { "Gateway is not quarantined" }
         require(worker.activeJobId == null) { "Gateway still has an active job" }
         worker.health = GatewayHealth.READY
     }
 
-    @Synchronized
-    fun state(jobId: String): JobState? = states[jobId]
-
-    fun cachedLatest(accessScope: String, deviceId: String): DailySmsResult? =
-        resultStore.latest(accessScope, deviceId)
-
+    @Synchronized fun state(jobId: String): JobState? = states[jobId]
+    fun cachedLatest(accessScope: String, deviceId: String): DailySmsResult? = resultStore.latest(accessScope, deviceId)
     fun cachedHistory(accessScope: String, deviceId: String, from: LocalDate, to: LocalDate): List<DailySmsResult> =
         resultStore.history(accessScope, deviceId, from, to)
 
-    private fun findJob(jobId: String): CheckJob =
-        jobsById[jobId] ?: error("Unknown idempotent job")
+    private fun pollPersonalJob(worker: GatewayWorker): CheckJob? {
+        val scope = worker.ownerAccessScope ?: return null
+        val queue = queuesByScope[scope] ?: return null
+        val job = queue.firstOrNull { it.preferredGatewayId == worker.id } ?: return null
+        queue.remove(job)
+        pruneEmptyScope(scope)
+        return job
+    }
+
+    private fun pollFairSharedJob(worker: GatewayWorker): CheckJob? {
+        if (scopeRotation.isEmpty()) return null
+        val count = scopeRotation.size
+        repeat(count) {
+            if (scopeRotation.isEmpty()) return null
+            if (nextScopeIndex >= scopeRotation.size) nextScopeIndex = 0
+            val scope = scopeRotation[nextScopeIndex]
+            val queue = queuesByScope[scope]
+            if (queue == null || queue.isEmpty()) {
+                removeScope(scope)
+                return@repeat
+            }
+            val candidate = queue.firstOrNull { isAvailableToSharedWorker(it, worker) }
+            if (candidate != null) {
+                queue.remove(candidate)
+                val index = scopeRotation.indexOf(scope)
+                if (index >= 0 && scopeRotation.isNotEmpty()) nextScopeIndex = (index + 1) % scopeRotation.size
+                pruneEmptyScope(scope)
+                return candidate
+            }
+            nextScopeIndex = (nextScopeIndex + 1) % scopeRotation.size
+        }
+        return null
+    }
+
+    private fun isAvailableToSharedWorker(job: CheckJob, worker: GatewayWorker): Boolean {
+        val preferredId = job.preferredGatewayId ?: return true
+        if (preferredId == worker.id) return true
+        val preferred = workers[preferredId] ?: return true
+        return preferred.health != GatewayHealth.READY
+    }
+
+    private fun pruneEmptyScope(scope: String) {
+        if (queuesByScope[scope]?.isNotEmpty() == true) return
+        queuesByScope.remove(scope)
+        removeScope(scope)
+    }
+
+    private fun removeScope(scope: String) {
+        val index = scopeRotation.indexOf(scope)
+        if (index < 0) return
+        scopeRotation.removeAt(index)
+        if (scopeRotation.isEmpty()) nextScopeIndex = 0
+        else {
+            if (index < nextScopeIndex) nextScopeIndex--
+            if (nextScopeIndex >= scopeRotation.size) nextScopeIndex = 0
+        }
+    }
+
+    private fun findJob(jobId: String): CheckJob = jobsById[jobId] ?: error("Unknown idempotent job")
 }
