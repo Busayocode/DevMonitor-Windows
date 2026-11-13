@@ -10,6 +10,7 @@ from uuid import UUID
 
 import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,7 +38,7 @@ async def lifespan(_: FastAPI):
             conninfo=DATABASE_URL,
             min_size=1,
             max_size=int(os.getenv("DB_POOL_MAX_SIZE", "10")),
-            kwargs={"row_factory": dict_row},
+            kwargs={"row_factory": dict_row, "autocommit": True},
             open=False,
         )
         db_pool.open(wait=True)
@@ -197,14 +198,15 @@ def get_current_user(
     subject = claims.get("sub")
     if not isinstance(subject, str) or not subject:
         raise HTTPException(status_code=401, detail="User token has no subject")
-    row = connection.execute(
-        """
-        INSERT INTO dm_users(auth_subject) VALUES (%s)
-        ON CONFLICT (auth_subject) DO UPDATE SET auth_subject = EXCLUDED.auth_subject
-        RETURNING id
-        """,
-        (subject,),
-    ).fetchone()
+    with connection.transaction():
+        row = connection.execute(
+            """
+            INSERT INTO dm_users(auth_subject) VALUES (%s)
+            ON CONFLICT (auth_subject) DO UPDATE SET auth_subject = EXCLUDED.auth_subject
+            RETURNING id
+            """,
+            (subject,),
+        ).fetchone()
     return {"id": row["id"], "subject": subject, "claims": claims}
 
 
@@ -308,14 +310,17 @@ def create_check_batch(
             (body.tenant_id, user["id"], idempotency_key),
         ).fetchone()
         if existing:
-            if bytes(existing["request_fingerprint"]) != fingerprint:
+            if existing["request_fingerprint"] is None or bytes(existing["request_fingerprint"]) != fingerprint:
                 raise HTTPException(status_code=409, detail="Idempotency key was already used for a different request")
-            return {
-                "batch_id": existing["id"],
-                "status": existing["status"],
-                "total_jobs": existing["total_jobs"],
-                "replayed": True,
-            }
+            return JSONResponse(
+                status_code=200,
+                content=jsonable_encoder({
+                    "batch_id": existing["id"],
+                    "status": existing["status"],
+                    "total_jobs": existing["total_jobs"],
+                    "replayed": True,
+                }),
+            )
 
         batch = connection.execute(
             """
@@ -342,12 +347,15 @@ def create_check_batch(
                 ),
             )
 
-    return {
-        "batch_id": batch["id"],
-        "status": batch["status"],
-        "total_jobs": batch["total_jobs"],
-        "replayed": False,
-    }
+    return JSONResponse(
+        status_code=202,
+        content=jsonable_encoder({
+            "batch_id": batch["id"],
+            "status": batch["status"],
+            "total_jobs": batch["total_jobs"],
+            "replayed": False,
+        }),
+    )
 
 
 @app.get("/v1/client/check-batches/{batch_id}")
