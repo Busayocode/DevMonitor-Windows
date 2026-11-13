@@ -125,7 +125,6 @@ paths:
       responses:
         "200":
           description: Only gateways owned by the authenticated user.
-  /v1/client/gateways:
     post:
       tags: [Personal gateways]
       summary: Register another DevMonitor phone as a personal gateway
