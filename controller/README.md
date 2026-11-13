@@ -59,7 +59,7 @@ The migrations require PostgreSQL with the `pgcrypto` extension available. Do no
 - The gateway first claims a short lease, then acknowledges SENDING before it attempts the SMS. An expired lease before SENDING can safely return to the queue. Once sending may have happened, expiry becomes AMBIGUOUS and quarantines the gateway.
 - A late response is accepted only against the same live attempt, gateway, job, lease token, tenant and device. It cannot complete a later job.
 - A completed result updates the daily cache only when its checked_at is newer than the stored value for that tenant/device/business date.
-- The reaper function should run periodically from a trusted server worker. It is deliberately conservative.
+- The FastAPI lifespan starts a periodic lease reaper (15-second default, configurable) when the database is configured. Multiple controller replicas may run it safely because expired rows are locked with SKIP LOCKED. Batch progress is derived from per-device job states so unresolved ambiguous jobs remain RUNNING until operator resolution.
 
 ## Required server transaction for a client batch
 
