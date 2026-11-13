@@ -17,6 +17,7 @@ import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 class MainActivity : ComponentActivity() {
     private lateinit var status: TextView
@@ -43,7 +44,7 @@ class MainActivity : ComponentActivity() {
             lifecycleScope.launch {
                 status.text = "Completing Firebase sign-in…"
                 try {
-                    FirebaseAuth.getInstance().signInWithCredential(credential)
+                    FirebaseAuth.getInstance().signInWithCredential(credential).await()
                     // Force one fresh token retrieval during this explicit diagnostic action.
                     FirebaseAuthIdTokenProvider().getIdToken(forceRefresh = true)
                     status.text = "Firebase sign-in successful. A Firebase ID token was obtained securely. The token is not displayed or stored."
@@ -112,7 +113,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun beginGoogleSignIn() {
-        val webClientId = getString(com.google.android.gms.base.R.string.common_google_play_services_unknown_issue)
         // The Google Services plugin generates this resource from the Gateway app's
         // own google-services.json; use it as the OAuth web client ID.
         val generatedWebClientId = resources.getIdentifier(
