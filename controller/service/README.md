@@ -5,7 +5,7 @@ This is the reference FastAPI service for the DevMonitor 5.0 controller. It is s
 ## Local run
 
 1. Create a dedicated PostgreSQL database.
-2. Apply the migrations in `../postgres/` in numeric order, V001 through V012.
+2. Apply the migrations in `../postgres/` in numeric order, V001 through V013.
 3. Copy `.env.example` to a private environment file and set:
    - `DATABASE_URL` to the controller database.
    - `FIREBASE_PROJECT_ID` to the exact Project ID shown in Firebase Console > Project settings > General.
@@ -40,4 +40,4 @@ Firebase Authentication is the selected identity provider. The existing `Fieldpu
 
 ## Not production-ready yet
 
-The code still needs real identity-provider integration tests, explicit PostgreSQL runtime-role grants, rate limiting, structured security/audit monitoring, deployment secrets management, cross-process contention/load tests, restart recovery tests, queue-rebalance/failover tests and a live gateway-phone test. Queue depth is sampled every minute while the controller is running and exposed as a 30-day trend. Time-weighted Gateway uptime is not yet calculated; utilization is currently a point-in-time busy/ready ratio. No paid service or cloud host has been selected.
+The code still needs real identity-provider integration tests, explicit PostgreSQL runtime-role grants, rate limiting, structured security/audit monitoring, deployment secrets management, cross-process contention/load tests, restart recovery tests, queue-rebalance/failover tests and a live gateway-phone test. Queue depth is sampled every minute while the controller is running and exposed as a 30-day trend. Observed Gateway uptime is calculated from recorded health transitions (periods without transition history are excluded); utilization is currently a point-in-time busy/ready ratio. No paid service or cloud host has been selected.
