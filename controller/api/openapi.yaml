@@ -122,7 +122,7 @@ paths:
     get:
       tags: [Client]
       summary: Read tenant administrator Gateway analytics
-      description: Aggregate tenant-scoped request, device, wait, response, timeout, cancellation and Gateway health metrics. Only tenant OWNER or ADMIN members may read it.
+      description: Aggregate tenant-scoped request, device, wait, response, timeout, cancellation, Gateway health, observed uptime and 30-day sampled queue-depth metrics. Only tenant OWNER or ADMIN members may read it.
       security:
         - UserBearerAuth: []
       parameters:
