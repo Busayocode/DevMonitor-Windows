@@ -96,6 +96,11 @@ BEGIN
         SELECT batch_id,target_gateway_id FROM personal_targets
         UNION ALL
         SELECT batch_id,target_gateway_id FROM shared_targets
+        UNION ALL
+        SELECT p.id AS batch_id,NULL::UUID AS target_gateway_id
+          FROM pending_base p
+         WHERE NOT EXISTS (SELECT 1 FROM personal_targets x WHERE x.batch_id=p.id)
+           AND NOT EXISTS (SELECT 1 FROM shared_targets x WHERE x.batch_id=p.id)
     ),
     changed AS (
         UPDATE dm_check_batches b
@@ -110,7 +115,9 @@ BEGIN
     INSERT INTO dm_gateway_audit_events(
         tenant_id,actor_user_id,gateway_id,event_type,details
     )
-    SELECT tenant_id,requested_by_user_id,assigned_gateway_id,'REQUEST_BATCH_ASSIGNED',
+    SELECT tenant_id,requested_by_user_id,assigned_gateway_id,
+           CASE WHEN assigned_gateway_id IS NULL THEN 'REQUEST_BATCH_UNASSIGNED'
+                ELSE 'REQUEST_BATCH_ASSIGNED' END,
            jsonb_build_object('batch_id',id,'gateway_id',assigned_gateway_id)
       FROM changed;
 
