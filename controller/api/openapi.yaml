@@ -202,6 +202,15 @@ paths:
       responses:
         "200": { description: Heartbeat recorded. Quarantine is never cleared by heartbeat. }
         "401": { description: Invalid or revoked gateway credential. }
+  /v1/gateway/active-attempt:
+    get:
+      tags: [Gateway worker]
+      summary: Recover active attempt metadata after a gateway process restart
+      security:
+        - GatewayBearerAuth: []
+      responses:
+        "200": { description: Active attempt metadata; the lease token is not returned and must have been retained locally. }
+        "401": { description: Invalid or revoked gateway credential. }
   /v1/gateway/jobs/claim:
     post:
       tags: [Gateway worker]
@@ -292,6 +301,29 @@ paths:
       responses:
         "200": { description: Accepted result; daily cache changes only if checked_at is newer. }
         "409": { description: Stale, mismatched, duplicate or expired attempt. }
+  /v1/gateway/jobs/{job_id}/send-failed:
+    post:
+      tags: [Gateway worker]
+      summary: Report a definitive local send failure before SMS transmission
+      description: Use only when the gateway can prove the SMS was not transmitted. Any uncertain outcome must use the ambiguous endpoint.
+      security:
+        - GatewayBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [attempt_id, lease_token, failure_code]
+              properties:
+                attempt_id: { type: string, format: uuid }
+                lease_token: { type: string }
+                failure_code: { type: string, maxLength: 100 }
+      responses:
+        "200": { description: Definitive send failure recorded. }
+        "409": { description: Attempt is not in a valid pre-transmission state. }
   /v1/gateway/jobs/{job_id}/ambiguous:
     post:
       tags: [Gateway worker]
