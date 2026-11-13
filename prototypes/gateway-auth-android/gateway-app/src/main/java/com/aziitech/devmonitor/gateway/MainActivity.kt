@@ -73,7 +73,7 @@ class MainActivity : ComponentActivity() {
             hint = "Controller HTTPS base URL (when deployed)"
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_VARIATION_URI
-            singleLine = true
+            setSingleLine(true)
         }
 
         val signInButton = Button(this).apply {
