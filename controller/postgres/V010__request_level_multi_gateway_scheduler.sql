@@ -236,7 +236,13 @@ BEGIN
      WHERE b.assigned_gateway_id=p_gateway_id
        AND b.cancellation_requested_at IS NULL
        AND j.state IN ('QUEUED','RETRY_PENDING')
-     ORDER BY b.created_at,b.id,j.enqueued_at,j.id
+     ORDER BY CASE WHEN EXISTS (
+                  SELECT 1 FROM dm_check_jobs own_job
+                   WHERE own_job.batch_id=b.id
+                     AND own_job.preferred_gateway_id=p_gateway_id
+                     AND own_job.requested_by_user_id=gateway_row.owner_user_id
+              ) THEN 0 ELSE 1 END,
+              b.created_at,b.id,j.enqueued_at,j.id
      LIMIT 1
      FOR UPDATE OF b,j SKIP LOCKED;
 
