@@ -1,226 +1,250 @@
--- Integration smoke test for V001-V005. Run against a clean disposable database after migrations.
--- All fixtures are rolled back at the end.
+-- Integration smoke tests for V001-V010 on a clean disposable PostgreSQL database.
+-- Covers request-level multi-Gateway distribution, safe failover, cancellation and
+-- the existing 3030 attempt/result-correlating safety rules. All fixtures roll back.
 BEGIN;
 
 DO $test$
 DECLARE
-    user_a UUID; user_b UUID;
-    tenant_a UUID; tenant_b UUID; tenant_c UUID; tenant_d UUID;
-    gateway_personal UUID; gateway_pool UUID; gateway_f1 UUID; gateway_f2 UUID; gateway_f3 UUID;
-    batch_a UUID; batch_b UUID; batch_c UUID; batch_d UUID; batch_old UUID; batch_a2 UUID; batch_b2 UUID;
-    job_personal UUID; job_shared UUID; job_c UUID; job_d UUID; job_old UUID; job_a1 UUID; job_a2 UUID; job_b1 UUID;
-    claim_row RECORD; claim_f1 RECORD; claim_f2 RECORD; claim_f3 RECORD; claim_old RECORD;
-    reaper_row RECORD;
-    personal_attempt UUID; personal_token TEXT;
-    attempt_f1 UUID; attempt_f3 UUID; token_f3 TEXT;
-    accepted BOOLEAN;
+    user_a UUID; user_b UUID; tenant_a UUID;
+    gateway_a UUID; gateway_b UUID; gateway_personal UUID;
+    batch_ids UUID[] := ARRAY[]::UUID[];
+    batch_id UUID; job_id UUID; first_job UUID; second_job UUID;
+    assigned UUID; assigned_2 UUID; assigned_3 UUID; assigned_4 UUID; assigned_5 UUID;
+    claim_row RECORD; claim_b RECORD; retry_claim RECORD; reaper_row RECORD; cancel_row RECORD;
+    attempt_id UUID; lease_token TEXT; accepted BOOLEAN;
+    ahead_count BIGINT;
 BEGIN
-    INSERT INTO dm_users(auth_subject) VALUES ('controller-test-user-a') RETURNING id INTO user_a;
-    INSERT INTO dm_users(auth_subject) VALUES ('controller-test-user-b') RETURNING id INTO user_b;
-
-    INSERT INTO dm_tenants(display_name) VALUES ('Controller Test Tenant A') RETURNING id INTO tenant_a;
-    INSERT INTO dm_tenants(display_name) VALUES ('Controller Test Tenant B') RETURNING id INTO tenant_b;
-    INSERT INTO dm_tenants(display_name) VALUES ('Controller Fair Tenant C') RETURNING id INTO tenant_c;
-    INSERT INTO dm_tenants(display_name) VALUES ('Controller Fair Tenant D') RETURNING id INTO tenant_d;
-
+    INSERT INTO dm_users(auth_subject) VALUES ('gateway-queue-test-user-a') RETURNING id INTO user_a;
+    INSERT INTO dm_users(auth_subject) VALUES ('gateway-queue-test-user-b') RETURNING id INTO user_b;
+    INSERT INTO dm_tenants(display_name) VALUES ('Gateway Multi-Queue Test Tenant') RETURNING id INTO tenant_a;
     INSERT INTO dm_tenant_memberships(tenant_id,user_id,role) VALUES
-      (tenant_a,user_a,'OWNER'), (tenant_a,user_b,'MEMBER'), (tenant_b,user_b,'OWNER'),
-      (tenant_c,user_a,'OWNER'), (tenant_d,user_b,'OWNER');
+      (tenant_a,user_a,'OWNER'),(tenant_a,user_b,'MEMBER');
 
+    -- Gateway A is the only eligible shared worker at first. Gateway B is registered
+    -- but not ready. The personal gateway is reserved for its owner and is not pooled.
     INSERT INTO dm_gateways(owner_user_id,display_name,credential_hash,health_state,accept_pool_jobs,
                             sms_permission_ready,telephony_ready,network_ready,heartbeat_at)
-    VALUES (user_a,'Personal Gateway',digest(gen_random_bytes(32),'sha256'),'READY',TRUE,TRUE,TRUE,TRUE,now())
+    VALUES (user_a,'Queue Gateway A',digest(gen_random_bytes(32),'sha256'),'READY',TRUE,TRUE,TRUE,TRUE,now())
+    RETURNING id INTO gateway_a;
+    INSERT INTO dm_gateways(owner_user_id,display_name,credential_hash,health_state,accept_pool_jobs,
+                            sms_permission_ready,telephony_ready,network_ready,heartbeat_at)
+    VALUES (user_b,'Queue Gateway B',digest(gen_random_bytes(32),'sha256'),'NOT_READY',TRUE,FALSE,FALSE,FALSE,now())
+    RETURNING id INTO gateway_b;
+    INSERT INTO dm_gateways(owner_user_id,display_name,credential_hash,health_state,accept_pool_jobs,
+                            sms_permission_ready,telephony_ready,network_ready,heartbeat_at)
+    VALUES (user_a,'Personal Only Gateway',digest(gen_random_bytes(32),'sha256'),'READY',FALSE,TRUE,TRUE,TRUE,now())
     RETURNING id INTO gateway_personal;
-    INSERT INTO dm_gateways(owner_user_id,display_name,credential_hash,health_state,accept_pool_jobs,
-                            sms_permission_ready,telephony_ready,network_ready,heartbeat_at)
-    VALUES (user_b,'Shared Pool Gateway',digest(gen_random_bytes(32),'sha256'),'READY',TRUE,TRUE,TRUE,TRUE,now())
-    RETURNING id INTO gateway_pool;
-    INSERT INTO dm_gateways(owner_user_id,display_name,credential_hash,health_state,accept_pool_jobs,
-                            sms_permission_ready,telephony_ready,network_ready,heartbeat_at)
-    VALUES (user_a,'Fair Worker 1',digest(gen_random_bytes(32),'sha256'),'READY',TRUE,TRUE,TRUE,TRUE,now())
-    RETURNING id INTO gateway_f1;
-    INSERT INTO dm_gateways(owner_user_id,display_name,credential_hash,health_state,accept_pool_jobs,
-                            sms_permission_ready,telephony_ready,network_ready,heartbeat_at)
-    VALUES (user_b,'Fair Worker 2',digest(gen_random_bytes(32),'sha256'),'READY',TRUE,TRUE,TRUE,TRUE,now())
-    RETURNING id INTO gateway_f2;
-    INSERT INTO dm_gateways(owner_user_id,display_name,credential_hash,health_state,accept_pool_jobs,
-                            sms_permission_ready,telephony_ready,network_ready,heartbeat_at)
-    VALUES (user_a,'Recovery Worker',digest(gen_random_bytes(32),'sha256'),'READY',TRUE,TRUE,TRUE,TRUE,now())
-    RETURNING id INTO gateway_f3;
 
-    INSERT INTO dm_tenant_device_access(tenant_id,canonical_device_id) VALUES
-      (tenant_a,'GLO-GD-PERSONAL'), (tenant_b,'GLO-GD-SHARED'),
-      (tenant_c,'GLO-GD-FAIR-C'), (tenant_d,'GLO-GD-FAIR-D');
+    -- Five request batches: 15, 35, 20, 10 and 5 devices.
+    FOR batch_no IN 1..5 LOOP
+        INSERT INTO dm_check_batches(
+            tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint
+        ) VALUES (
+            tenant_a,
+            CASE WHEN batch_no IN (1,3,5) THEN user_a ELSE user_b END,
+            'multi-gateway-'||batch_no,'GATEWAY',
+            CASE batch_no WHEN 1 THEN 15 WHEN 2 THEN 35 WHEN 3 THEN 20 WHEN 4 THEN 10 ELSE 5 END,
+            digest('multi-gateway-'||batch_no,'sha256')
+        ) RETURNING id INTO batch_id;
+        batch_ids := array_append(batch_ids,batch_id);
+        INSERT INTO dm_tenant_device_access(tenant_id,canonical_device_id)
+        SELECT tenant_a,'QUEUE-'||batch_no||'-'||n
+          FROM generate_series(1,CASE batch_no WHEN 1 THEN 15 WHEN 2 THEN 35 WHEN 3 THEN 20 WHEN 4 THEN 10 ELSE 5 END) n;
+        INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile)
+        SELECT batch_id,tenant_a,
+               CASE WHEN batch_no IN (1,3,5) THEN user_a ELSE user_b END,
+               'QUEUE-'||batch_no||'-'||n,'standard'
+          FROM generate_series(1,CASE batch_no WHEN 1 THEN 15 WHEN 2 THEN 35 WHEN 3 THEN 20 WHEN 4 THEN 10 ELSE 5 END) n;
+    END LOOP;
 
-    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
-    VALUES (tenant_a,user_a,'personal-batch','GATEWAY',1,digest('personal-batch','sha256')) RETURNING id INTO batch_a;
-    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
-    VALUES (tenant_b,user_b,'shared-batch','GATEWAY',1,digest('shared-batch','sha256')) RETURNING id INTO batch_b;
-
-    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,preferred_gateway_id)
-    VALUES (batch_a,tenant_a,user_a,'GLO-GD-PERSONAL','standard',gateway_personal)
-    RETURNING id INTO job_personal;
-    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile)
-    VALUES (batch_b,tenant_b,user_b,'GLO-GD-SHARED','standard')
-    RETURNING id INTO job_shared;
-
-    -- The pool gateway may take the ordinary shared job, but not the healthy owner's reserved job.
-    SELECT * INTO claim_row FROM dm_claim_next_job(gateway_pool);
-    IF claim_row.job_id IS DISTINCT FROM job_shared THEN
-        RAISE EXCEPTION 'pool worker did not claim the shared job';
-    END IF;
-    SELECT * INTO claim_row FROM dm_claim_next_job(gateway_f1);
-    IF claim_row.job_id IS NOT NULL THEN
-        RAISE EXCEPTION 'shared worker stole a healthy personal gateway reservation';
+    PERFORM dm_rebalance_unstarted_batches();
+    IF EXISTS (SELECT 1 FROM dm_check_batches WHERE id=ANY(batch_ids) AND assigned_gateway_id<>gateway_a) THEN
+        RAISE EXCEPTION 'single eligible Gateway should initially own all five queued requests';
     END IF;
 
-    -- The personal gateway claims its owner's request before any pool work.
-    SELECT * INTO claim_row FROM dm_claim_next_job(gateway_personal);
-    IF claim_row.job_id IS DISTINCT FROM job_personal THEN
-        RAISE EXCEPTION 'personal gateway did not claim owner-priority job';
-    END IF;
-    personal_attempt := claim_row.attempt_id;
-    personal_token := claim_row.lease_token;
-
-    accepted := dm_mark_attempt_sending(gateway_personal,job_personal,personal_attempt,personal_token);
-    IF NOT accepted THEN RAISE EXCEPTION 'could not mark personal attempt sending'; END IF;
-    accepted := dm_mark_attempt_awaiting_reply(
-        gateway_personal,job_personal,personal_attempt,personal_token,now(),120
-    );
-    IF NOT accepted THEN RAISE EXCEPTION 'could not mark personal attempt awaiting reply'; END IF;
-    accepted := dm_complete_job_result(
-        gateway_personal,job_personal,personal_attempt,personal_token,
-        CURRENT_DATE,now(),now(),
-        '{"todayCount":12,"mtdCount":120,"active":90,"bar48":4,"bar96":2,"duplicates":0,"monthlyTarget":200}'::jsonb,
-        'controller-test-parser'
-    );
-    IF NOT accepted THEN RAISE EXCEPTION 'valid result was not accepted'; END IF;
-    IF NOT EXISTS (SELECT 1 FROM dm_daily_sms_results
-                    WHERE tenant_id=tenant_a AND canonical_device_id='GLO-GD-PERSONAL'
-                      AND business_date=CURRENT_DATE) THEN
-        RAISE EXCEPTION 'daily result cache row missing';
+    -- Gateway A starts request 1. When Gateway B becomes ready, the remaining
+    -- unstarted request batches distribute B/A/B/A while request 1 stays with A.
+    SELECT * INTO claim_row FROM dm_claim_next_job(gateway_a);
+    SELECT id INTO first_job FROM dm_check_jobs WHERE batch_id=batch_ids[1] ORDER BY enqueued_at,id LIMIT 1;
+    IF claim_row.job_id IS DISTINCT FROM first_job THEN
+        RAISE EXCEPTION 'Gateway A did not start the oldest request batch';
     END IF;
 
-    -- A delayed older response may complete its own job but cannot replace the latest daily cache row.
-    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
-    VALUES (tenant_a,user_a,'personal-old-check','GATEWAY',1,digest('personal-old-check','sha256'))
-    RETURNING id INTO batch_old;
-    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,preferred_gateway_id)
-    VALUES (batch_old,tenant_a,user_a,'GLO-GD-PERSONAL','standard',gateway_personal)
-    RETURNING id INTO job_old;
-    SELECT * INTO claim_old FROM dm_claim_next_job(gateway_personal);
-    IF claim_old.job_id IS DISTINCT FROM job_old THEN
-        RAISE EXCEPTION 'personal gateway did not claim delayed-result test job';
-    END IF;
-    accepted := dm_mark_attempt_sending(gateway_personal,job_old,claim_old.attempt_id,claim_old.lease_token);
-    IF NOT accepted THEN RAISE EXCEPTION 'could not start delayed-result test attempt'; END IF;
-    accepted := dm_mark_attempt_awaiting_reply(
-        gateway_personal,job_old,claim_old.attempt_id,claim_old.lease_token,now(),120
-    );
-    IF NOT accepted THEN RAISE EXCEPTION 'could not await delayed-result test reply'; END IF;
-    accepted := dm_complete_job_result(
-        gateway_personal,job_old,claim_old.attempt_id,claim_old.lease_token,
-        CURRENT_DATE,now()-INTERVAL '1 minute',now(),
-        '{"todayCount":1,"mtdCount":1,"active":1,"bar48":0,"bar96":0,"duplicates":0,"monthlyTarget":200}'::jsonb,
-        'controller-test-parser'
-    );
-    IF NOT accepted THEN RAISE EXCEPTION 'delayed result attempt was not completed'; END IF;
-    IF (SELECT job_id FROM dm_daily_sms_results
-         WHERE tenant_id=tenant_a AND canonical_device_id='GLO-GD-PERSONAL'
-           AND business_date=CURRENT_DATE) IS DISTINCT FROM job_personal THEN
-        RAISE EXCEPTION 'older delayed result overwrote latest daily cache';
+    PERFORM dm_record_gateway_heartbeat(gateway_b,'test',TRUE,TRUE,TRUE,NULL);
+    SELECT assigned_gateway_id INTO assigned_2 FROM dm_check_batches WHERE id=batch_ids[2];
+    SELECT assigned_gateway_id INTO assigned_3 FROM dm_check_batches WHERE id=batch_ids[3];
+    SELECT assigned_gateway_id INTO assigned_4 FROM dm_check_batches WHERE id=batch_ids[4];
+    SELECT assigned_gateway_id INTO assigned_5 FROM dm_check_batches WHERE id=batch_ids[5];
+    IF assigned_2 IS DISTINCT FROM gateway_b OR assigned_3 IS DISTINCT FROM gateway_a
+       OR assigned_4 IS DISTINCT FROM gateway_b OR assigned_5 IS DISTINCT FROM gateway_a THEN
+        RAISE EXCEPTION 'new Gateway did not rebalance queued requests in FIFO round-robin order';
     END IF;
 
-    -- Tenant C is older and gets the first fair turn; tenant D gets the next one.
-    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
-    VALUES (tenant_c,user_a,'fair-c','GATEWAY',1,digest('fair-c','sha256')) RETURNING id INTO batch_c;
-    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
-    VALUES (tenant_d,user_b,'fair-d','GATEWAY',1,digest('fair-d','sha256')) RETURNING id INTO batch_d;
-    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,enqueued_at)
-    VALUES (batch_c,tenant_c,user_a,'GLO-GD-FAIR-C','standard',now()-INTERVAL '2 minutes')
-    RETURNING id INTO job_c;
-    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,enqueued_at)
-    VALUES (batch_d,tenant_d,user_b,'GLO-GD-FAIR-D','standard',now()-INTERVAL '1 minute')
-    RETURNING id INTO job_d;
-
-    SELECT * INTO claim_f1 FROM dm_claim_next_job(gateway_f1);
-    SELECT * INTO claim_f2 FROM dm_claim_next_job(gateway_f2);
-    IF claim_f1.job_id IS DISTINCT FROM job_c OR claim_f2.job_id IS DISTINCT FROM job_d THEN
-        RAISE EXCEPTION 'tenant round-robin fairness failed';
+    SELECT count(*) INTO ahead_count
+      FROM dm_check_jobs j JOIN dm_check_batches b ON b.id=j.batch_id
+     WHERE b.assigned_gateway_id=gateway_a AND b.id=batch_ids[3]
+       AND b.id<>batch_ids[3]
+       AND b.created_at < (SELECT created_at FROM dm_check_batches WHERE id=batch_ids[3])
+       AND j.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS');
+    IF ahead_count <> 15 THEN
+        RAISE EXCEPTION 'request 3 should see 15 devices ahead on Gateway A, got %',ahead_count;
     END IF;
 
-    -- Expiry before SENDING is safe to requeue.
+    SELECT * INTO claim_b FROM dm_claim_next_job(gateway_b);
+    SELECT id INTO job_id FROM dm_check_jobs WHERE batch_id=batch_ids[2] ORDER BY enqueued_at,id LIMIT 1;
+    IF claim_b.job_id IS DISTINCT FROM job_id THEN
+        RAISE EXCEPTION 'Gateway B did not start request 2 after becoming ready';
+    END IF;
+
+    -- Gateway B goes unavailable. Its pre-send leased request is held until the
+    -- lease is safely reaped; unstarted request 4 is immediately reassigned to A.
+    PERFORM dm_record_gateway_heartbeat(gateway_b,'test',FALSE,FALSE,FALSE,NULL);
+    IF (SELECT assigned_gateway_id FROM dm_check_batches WHERE id=batch_ids[4]) IS DISTINCT FROM gateway_a THEN
+        RAISE EXCEPTION 'unstarted request 4 was not reassigned after Gateway B went offline';
+    END IF;
     UPDATE dm_job_attempts SET lease_expires_at=now()-INTERVAL '1 second'
-     WHERE id=claim_f1.attempt_id;
+     WHERE id=claim_b.attempt_id;
     SELECT * INTO reaper_row FROM dm_reap_expired_attempts();
     IF reaper_row.requeued_jobs <> 1 THEN
-        RAISE EXCEPTION 'pre-send lease expiry was not safely requeued';
+        RAISE EXCEPTION 'pre-send expiry was not safely requeued';
     END IF;
-    IF (SELECT state FROM dm_check_jobs WHERE id=job_c) <> 'RETRY_PENDING' THEN
-        RAISE EXCEPTION 'pre-send expired job did not return to retry queue';
+    PERFORM dm_rebalance_unstarted_batches();
+    IF (SELECT assigned_gateway_id FROM dm_check_batches WHERE id=batch_ids[2]) IS DISTINCT FROM gateway_a THEN
+        RAISE EXCEPTION 'request 2 was not reassigned after its pre-send lease expired';
     END IF;
 
-    -- Expiry after SENDING is ambiguous and quarantines the phone.
-    SELECT * INTO claim_f3 FROM dm_claim_next_job(gateway_f3);
-    IF claim_f3.job_id IS DISTINCT FROM job_c THEN
-        RAISE EXCEPTION 'requeued job was not available to another worker';
+    -- Clear the five queue fixtures after checking distribution and failover.
+    FOR batch_no IN 1..5 LOOP
+        PERFORM * FROM dm_cancel_check_batch(batch_ids[batch_no],tenant_a,
+            CASE WHEN batch_no IN (1,3,5) THEN user_a ELSE user_b END,'cleanup after queue test');
+    END LOOP;
+
+    -- Personal gateway is owner-only and remains available even when not in the pool.
+    INSERT INTO dm_tenant_device_access(tenant_id,canonical_device_id)
+    VALUES (tenant_a,'CACHE-DEVICE'),(tenant_a,'RECOVERY-DEVICE'),
+           (tenant_a,'CANCEL-QUEUED-1'),(tenant_a,'CANCEL-QUEUED-2'),
+           (tenant_a,'CANCEL-INFLIGHT-1'),(tenant_a,'CANCEL-INFLIGHT-2');
+
+    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
+    VALUES (tenant_a,user_a,'cache-first','GATEWAY',1,digest('cache-first','sha256')) RETURNING id INTO batch_id;
+    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,preferred_gateway_id)
+    VALUES (batch_id,tenant_a,user_a,'CACHE-DEVICE','standard',gateway_personal);
+    PERFORM dm_rebalance_unstarted_batches();
+    SELECT * INTO claim_row FROM dm_claim_next_job(gateway_personal);
+    accepted := dm_mark_attempt_sending(gateway_personal,claim_row.job_id,claim_row.attempt_id,claim_row.lease_token);
+    IF NOT accepted THEN RAISE EXCEPTION 'could not start first cache attempt'; END IF;
+    accepted := dm_mark_attempt_awaiting_reply(gateway_personal,claim_row.job_id,claim_row.attempt_id,
+                                               claim_row.lease_token,now(),120);
+    IF NOT accepted THEN RAISE EXCEPTION 'could not await first cache reply'; END IF;
+    accepted := dm_complete_job_result(
+        gateway_personal,claim_row.job_id,claim_row.attempt_id,claim_row.lease_token,
+        CURRENT_DATE,now(),now(),
+        '{"todayCount":12,"mtdCount":120,"active":90,"bar48":4,"bar96":2,"duplicates":0,"monthlyTarget":200}'::jsonb,
+        'controller-test-parser');
+    IF NOT accepted THEN RAISE EXCEPTION 'first cache result was not accepted'; END IF;
+
+    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
+    VALUES (tenant_a,user_a,'cache-delayed','GATEWAY',1,digest('cache-delayed','sha256')) RETURNING id INTO batch_id;
+    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,preferred_gateway_id)
+    VALUES (batch_id,tenant_a,user_a,'CACHE-DEVICE','standard',gateway_personal);
+    PERFORM dm_rebalance_unstarted_batches();
+    SELECT * INTO claim_row FROM dm_claim_next_job(gateway_personal);
+    accepted := dm_mark_attempt_sending(gateway_personal,claim_row.job_id,claim_row.attempt_id,claim_row.lease_token);
+    IF NOT accepted THEN RAISE EXCEPTION 'could not start delayed cache attempt'; END IF;
+    accepted := dm_mark_attempt_awaiting_reply(gateway_personal,claim_row.job_id,claim_row.attempt_id,
+                                               claim_row.lease_token,now(),120);
+    IF NOT accepted THEN RAISE EXCEPTION 'could not await delayed cache reply'; END IF;
+    accepted := dm_complete_job_result(
+        gateway_personal,claim_row.job_id,claim_row.attempt_id,claim_row.lease_token,
+        CURRENT_DATE,now()-INTERVAL '1 minute',now(),
+        '{"todayCount":1,"mtdCount":1,"active":1,"bar48":0,"bar96":0,"duplicates":0,"monthlyTarget":200}'::jsonb,
+        'controller-test-parser');
+    IF NOT accepted THEN RAISE EXCEPTION 'delayed cache result was not accepted'; END IF;
+    IF (SELECT job_id FROM dm_daily_sms_results
+         WHERE tenant_id=tenant_a AND canonical_device_id='CACHE-DEVICE'
+           AND business_date=CURRENT_DATE) IS DISTINCT FROM first_job
+       AND (SELECT job_id FROM dm_daily_sms_results
+             WHERE tenant_id=tenant_a AND canonical_device_id='CACHE-DEVICE'
+               AND business_date=CURRENT_DATE) IS NULL THEN
+        RAISE EXCEPTION 'daily cache unexpectedly missing';
     END IF;
-    attempt_f3 := claim_f3.attempt_id;
-    token_f3 := claim_f3.lease_token;
-    accepted := dm_mark_attempt_sending(gateway_f3,job_c,attempt_f3,token_f3);
-    IF NOT accepted THEN RAISE EXCEPTION 'could not mark recovery attempt sending'; END IF;
-    UPDATE dm_job_attempts SET lease_expires_at=now()-INTERVAL '1 second'
-     WHERE id=attempt_f3;
+    IF (SELECT values_json->>'todayCount' FROM dm_daily_sms_results
+         WHERE tenant_id=tenant_a AND canonical_device_id='CACHE-DEVICE'
+           AND business_date=CURRENT_DATE) <> '12' THEN
+        RAISE EXCEPTION 'older delayed response overwrote the newer daily cache';
+    END IF;
+
+    -- Pre-send lease expiry can be retried safely by the same still-ready Gateway.
+    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
+    VALUES (tenant_a,user_a,'recovery','GATEWAY',1,digest('recovery','sha256')) RETURNING id INTO batch_id;
+    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,preferred_gateway_id)
+    VALUES (batch_id,tenant_a,user_a,'RECOVERY-DEVICE','standard',gateway_personal);
+    PERFORM dm_rebalance_unstarted_batches();
+    SELECT * INTO claim_row FROM dm_claim_next_job(gateway_personal);
+    UPDATE dm_job_attempts SET lease_expires_at=now()-INTERVAL '1 second' WHERE id=claim_row.attempt_id;
     SELECT * INTO reaper_row FROM dm_reap_expired_attempts();
-    IF reaper_row.quarantined_gateways <> 1 THEN
-        RAISE EXCEPTION 'post-send expiry did not quarantine gateway';
+    IF reaper_row.requeued_jobs <> 1 THEN RAISE EXCEPTION 'pre-send expiry did not requeue'; END IF;
+    SELECT * INTO retry_claim FROM dm_claim_next_job(gateway_personal);
+    IF retry_claim.job_id IS DISTINCT FROM claim_row.job_id THEN
+        RAISE EXCEPTION 'same Gateway did not safely retry its pre-send job';
     END IF;
-    IF (SELECT health_state FROM dm_gateways WHERE id=gateway_f3) <> 'QUARANTINED' THEN
-        RAISE EXCEPTION 'gateway was not quarantined';
+    accepted := dm_mark_attempt_sending(gateway_personal,retry_claim.job_id,retry_claim.attempt_id,retry_claim.lease_token);
+    IF NOT accepted THEN RAISE EXCEPTION 'could not start recovery attempt'; END IF;
+    UPDATE dm_job_attempts SET lease_expires_at=now()-INTERVAL '1 second' WHERE id=retry_claim.attempt_id;
+    SELECT * INTO reaper_row FROM dm_reap_expired_attempts();
+    IF reaper_row.quarantined_gateways <> 1 THEN RAISE EXCEPTION 'post-send expiry did not quarantine Gateway'; END IF;
+    IF (SELECT state FROM dm_check_jobs WHERE id=retry_claim.job_id) <> 'AMBIGUOUS' THEN
+        RAISE EXCEPTION 'post-send expiry did not mark job ambiguous';
     END IF;
-    IF (SELECT state FROM dm_check_jobs WHERE id=job_c) <> 'AMBIGUOUS' THEN
-        RAISE EXCEPTION 'post-send expired job was not marked ambiguous';
-    END IF;
-
     INSERT INTO dm_controller_operators(user_id) VALUES (user_a);
     accepted := dm_operator_resolve_ambiguous_attempt(
-        attempt_f3,user_a,'REQUEUE_AFTER_INBOX_CLEARED',
-        'Test operator verified the old inbox transaction is fully resolved.'
-    );
+        retry_claim.attempt_id,user_a,'REQUEUE_AFTER_INBOX_CLEARED',
+        'Test operator verified the old inbox transaction is fully resolved.');
     IF NOT accepted THEN RAISE EXCEPTION 'operator could not resolve ambiguous attempt'; END IF;
     accepted := dm_operator_resolve_gateway_quarantine(
-        gateway_f3,user_a,'Test operator confirmed inbox cleared and safe for new work.'
-    );
-    IF NOT accepted THEN RAISE EXCEPTION 'operator could not release gateway quarantine'; END IF;
-    IF (SELECT health_state FROM dm_gateways WHERE id=gateway_f3) <> 'READY' THEN
-        RAISE EXCEPTION 'resolved gateway did not return to READY';
-    END IF;
-    -- Fairness also applies to two requesters inside the same tenant/company.
-    INSERT INTO dm_tenant_device_access(tenant_id,canonical_device_id) VALUES
-      (tenant_a,'GLO-GD-USER-A-1'), (tenant_a,'GLO-GD-USER-A-2'),
-      (tenant_a,'GLO-GD-USER-B-1');
-    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
-    VALUES (tenant_a,user_a,'same-tenant-user-a','GATEWAY',2,digest('same-tenant-user-a','sha256'))
-    RETURNING id INTO batch_a2;
-    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
-    VALUES (tenant_a,user_b,'same-tenant-user-b','GATEWAY',1,digest('same-tenant-user-b','sha256'))
-    RETURNING id INTO batch_b2;
-    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,enqueued_at)
-    VALUES (batch_a2,tenant_a,user_a,'GLO-GD-USER-A-1','standard',now()-INTERVAL '3 minutes')
-    RETURNING id INTO job_a1;
-    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,enqueued_at)
-    VALUES (batch_a2,tenant_a,user_a,'GLO-GD-USER-A-2','standard',now()-INTERVAL '2 minutes')
-    RETURNING id INTO job_a2;
-    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,enqueued_at)
-    VALUES (batch_b2,tenant_a,user_b,'GLO-GD-USER-B-1','standard',now()-INTERVAL '1 minute')
-    RETURNING id INTO job_b1;
+        gateway_personal,user_a,'Test operator confirmed inbox cleared and safe for new work.');
+    IF NOT accepted THEN RAISE EXCEPTION 'operator could not release Gateway quarantine'; END IF;
 
-    SELECT * INTO claim_f1 FROM dm_claim_next_job(gateway_f1);
-    SELECT * INTO claim_f3 FROM dm_claim_next_job(gateway_f3);
-    IF claim_f1.job_id IS DISTINCT FROM job_a1 OR claim_f3.job_id IS DISTINCT FROM job_b1 THEN
-        RAISE EXCEPTION 'same-tenant requester round-robin fairness failed';
+    -- User can cancel an untouched queue; every unstarted device is cancelled.
+    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
+    VALUES (tenant_a,user_b,'cancel-queued','GATEWAY',2,digest('cancel-queued','sha256')) RETURNING id INTO batch_id;
+    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile)
+    VALUES (batch_id,tenant_a,user_b,'CANCEL-QUEUED-1','standard'),
+           (batch_id,tenant_a,user_b,'CANCEL-QUEUED-2','standard');
+    PERFORM dm_rebalance_unstarted_batches();
+    SELECT * INTO cancel_row FROM dm_cancel_check_batch(batch_id,tenant_a,user_b,'user cancelled');
+    IF cancel_row.batch_status <> 'CANCELLED' OR cancel_row.cancelled_jobs <> 2 THEN
+        RAISE EXCEPTION 'queued request cancellation did not cancel both jobs';
     END IF;
 
+    -- An already-sent SMS is not interrupted. Other devices stop, and the request
+    -- becomes PARTIAL once the in-flight result arrives.
+    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
+    VALUES (tenant_a,user_a,'cancel-inflight','GATEWAY',2,digest('cancel-inflight','sha256')) RETURNING id INTO batch_id;
+    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,preferred_gateway_id)
+    VALUES (batch_id,tenant_a,user_a,'CANCEL-INFLIGHT-1','standard',gateway_personal),
+           (batch_id,tenant_a,user_a,'CANCEL-INFLIGHT-2','standard',gateway_personal);
+    PERFORM dm_rebalance_unstarted_batches();
+    SELECT * INTO claim_row FROM dm_claim_next_job(gateway_personal);
+    accepted := dm_mark_attempt_sending(gateway_personal,claim_row.job_id,claim_row.attempt_id,claim_row.lease_token);
+    IF NOT accepted THEN RAISE EXCEPTION 'could not begin in-flight cancellation test'; END IF;
+    accepted := dm_mark_attempt_awaiting_reply(gateway_personal,claim_row.job_id,claim_row.attempt_id,
+                                               claim_row.lease_token,now(),120);
+    IF NOT accepted THEN RAISE EXCEPTION 'could not await in-flight cancellation test'; END IF;
+    SELECT * INTO cancel_row FROM dm_cancel_check_batch(batch_id,tenant_a,user_a,'cancel remaining devices');
+    IF cancel_row.in_flight_jobs <> 1 OR cancel_row.cancelled_jobs <> 1
+       OR cancel_row.batch_status <> 'RUNNING' THEN
+        RAISE EXCEPTION 'cancellation interrupted an in-flight SMS or failed to stop remaining jobs';
+    END IF;
+    accepted := dm_complete_job_result(
+        gateway_personal,claim_row.job_id,claim_row.attempt_id,claim_row.lease_token,
+        CURRENT_DATE,now(),now(),
+        '{"todayCount":4,"mtdCount":40,"active":30,"bar48":1,"bar96":0,"duplicates":0,"monthlyTarget":100}'::jsonb,
+        'controller-test-parser');
+    IF NOT accepted THEN RAISE EXCEPTION 'in-flight SMS result was not accepted after cancellation'; END IF;
+    IF (SELECT status FROM dm_check_batches WHERE id=batch_id) <> 'PARTIAL' THEN
+        RAISE EXCEPTION 'cancelled request did not settle to PARTIAL after in-flight completion';
+    END IF;
 END;
 $test$;
 
