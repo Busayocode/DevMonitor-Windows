@@ -1,0 +1,106 @@
+name: Validate DevMonitor Gateway Controller
+
+on:
+  push:
+    branches:
+      - devmonitor-5.0-foundation
+    paths:
+      - "controller/**"
+      - "docs/DevMonitor-5.0-Phase-3-Controller-Foundation.md"
+      - ".github/workflows/validate-gateway-controller.yml"
+  pull_request:
+    branches:
+      - devmonitor-5.0-foundation
+    paths:
+      - "controller/**"
+      - "docs/DevMonitor-5.0-Phase-3-Controller-Foundation.md"
+      - ".github/workflows/validate-gateway-controller.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-controller:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: devmonitor_gateway_test
+          POSTGRES_USER: gateway_test
+          POSTGRES_PASSWORD: gateway_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gateway_test -d devmonitor_gateway_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGDATABASE: devmonitor_gateway_test
+      PGUSER: gateway_test
+      PGPASSWORD: gateway_test_password
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client and YAML parser
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          python -m pip install --user pyyaml
+
+      - name: Validate OpenAPI YAML structure and duplicate keys
+        run: |
+          python - <<'PY'
+          import yaml
+          from pathlib import Path
+
+          class UniqueKeyLoader(yaml.SafeLoader):
+              pass
+
+          def construct_mapping(loader, node, deep=False):
+              mapping = {}
+              for key_node, value_node in node.value:
+                  key = loader.construct_object(key_node, deep=deep)
+                  if key in mapping:
+                      raise ValueError(f"Duplicate YAML key: {key}")
+                  mapping[key] = loader.construct_object(value_node, deep=deep)
+              return mapping
+
+          UniqueKeyLoader.add_constructor(
+              yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+              construct_mapping
+          )
+          spec = yaml.load(
+              Path("controller/api/openapi.yaml").read_text(),
+              Loader=UniqueKeyLoader
+          )
+          assert spec["openapi"].startswith("3.1.")
+          assert "/v1/client/gateways" in spec["paths"]
+          assert "get" in spec["paths"]["/v1/client/gateways"]
+          assert "post" in spec["paths"]["/v1/client/gateways"]
+          assert "UserBearerAuth" in spec["components"]["securitySchemes"]
+          assert "GatewayBearerAuth" in spec["components"]["securitySchemes"]
+          print("OpenAPI YAML structure passed.")
+          PY
+
+      - name: Wait for PostgreSQL
+        run: |
+          for attempt in $(seq 1 30); do
+            pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Apply controller migrations in order
+        run: |
+          for migration in $(find controller/postgres -maxdepth 1 -name 'V*.sql' | sort); do
+            echo "Applying $migration"
+            psql -v ON_ERROR_STOP=1 -f "$migration"
+          done
+
+      - name: Run controller integration smoke tests
+        run: psql -v ON_ERROR_STOP=1 -f controller/postgres/tests/controller_smoke_test.sql
