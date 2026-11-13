@@ -6,5 +6,5 @@ package com.aziitech.devmonitor.gateway.auth
  * This is deliberately separate from Google Drive OAuth access tokens.
  */
 fun interface IdTokenProvider {
-    suspend fun getIdToken(forceRefresh: Boolean = false): String
+    suspend fun getIdToken(forceRefresh: Boolean): String
 }
