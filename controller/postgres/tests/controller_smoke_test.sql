@@ -117,6 +117,8 @@ BEGIN
     IF claim_b.job_id IS DISTINCT FROM job_id THEN
         RAISE EXCEPTION 'Gateway B did not start request 2 after becoming ready';
     END IF;
+    accepted := dm_mark_attempt_sending(gateway_b,claim_b.job_id,claim_b.attempt_id,claim_b.lease_token);
+    IF NOT accepted THEN RAISE EXCEPTION 'Gateway B could not acknowledge SMS send'; END IF;
 
     -- Once a request has started, a normal rebalance between SMS attempts must
     -- keep the remaining devices on that Gateway while it remains healthy.
@@ -165,18 +167,38 @@ BEGIN
     UPDATE dm_job_attempts SET lease_expires_at=now()-INTERVAL '1 second'
      WHERE id=claim_b.attempt_id;
     SELECT * INTO reaper_row FROM dm_reap_expired_attempts();
-    IF reaper_row.requeued_jobs <> 1 THEN
-        RAISE EXCEPTION 'pre-send expiry was not safely requeued';
+    IF reaper_row.quarantined_gateways <> 1 THEN
+        RAISE EXCEPTION 'lost Gateway with an acknowledged send was not quarantined';
+    END IF;
+    IF (SELECT state FROM dm_check_jobs WHERE id=claim_b.job_id) <> 'AMBIGUOUS' THEN
+        RAISE EXCEPTION 'lost Gateway send was not protected as ambiguous';
     END IF;
     PERFORM dm_rebalance_unstarted_batches();
     IF (SELECT assigned_gateway_id FROM dm_check_batches WHERE id=batch_ids[2]) IS DISTINCT FROM gateway_a THEN
-        RAISE EXCEPTION 'request 2 was not reassigned after its pre-send lease expired';
+        RAISE EXCEPTION 'remaining request 2 devices were not reassigned after ambiguous send';
     END IF;
 
-    -- Clear the five queue fixtures after checking distribution and failover.
-    FOR batch_no IN 1..5 LOOP
-        PERFORM * FROM dm_cancel_check_batch(batch_ids[batch_no],tenant_a,
-            CASE WHEN batch_no IN (1,3,5) THEN user_a ELSE user_b END,'cleanup after queue test');
+    -- Cancellation stops the rest of request 2 but leaves its ambiguous SMS for
+    -- operator resolution; it must never be blindly resent by Gateway A.
+    SELECT * INTO cancel_row FROM dm_cancel_check_batch(batch_ids[2],tenant_a,user_b,'cancel after Gateway loss');
+    IF cancel_row.in_flight_jobs <> 1 OR cancel_row.cancelled_jobs <> 34
+       OR cancel_row.batch_status <> 'RUNNING' THEN
+        RAISE EXCEPTION 'request cancellation did not preserve the ambiguous attempt';
+    END IF;
+    accepted := dm_operator_resolve_ambiguous_attempt(
+        claim_b.attempt_id,user_a,'REQUEUE_AFTER_INBOX_CLEARED',
+        'Test operator verified the old Gateway inbox is resolved.');
+    IF NOT accepted THEN RAISE EXCEPTION 'operator could not resolve Gateway B ambiguous attempt'; END IF;
+    accepted := dm_operator_resolve_gateway_quarantine(
+        gateway_b,user_a,'Test operator confirmed Gateway B inbox cleared and safe.');
+    IF NOT accepted THEN RAISE EXCEPTION 'operator could not release Gateway B quarantine'; END IF;
+
+    -- Cancel the first request (one result already completed) and the other
+    -- untouched queued requests after validating the redistribution behaviour.
+    PERFORM dm_cancel_check_batch(batch_ids[1],tenant_a,user_a,'cleanup after queue test');
+    FOR batch_no IN 3..5 LOOP
+        PERFORM dm_cancel_check_batch(batch_ids[batch_no],tenant_a,
+            CASE WHEN batch_no IN (3,5) THEN user_a ELSE user_b END,'cleanup after queue test');
     END LOOP;
 
     -- Personal gateway is owner-only and remains available even when not in the pool.
