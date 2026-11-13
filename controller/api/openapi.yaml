@@ -351,7 +351,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: User token validated against the configured identity provider.
+      description: Firebase Authentication ID token validated for the configured Firebase project using Google's Secure Token signing keys.
     GatewayBearerAuth:
       type: http
       scheme: bearer
