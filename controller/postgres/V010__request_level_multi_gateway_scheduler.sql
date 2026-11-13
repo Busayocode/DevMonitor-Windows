@@ -29,7 +29,7 @@ RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE changed_count INTEGER;
 BEGIN
     WITH gateway_load AS (
-        SELECT g.id,
+        SELECT g.id,g.created_at,
                count(DISTINCT b.id) FILTER (
                    WHERE b.processing_started_at IS NOT NULL
                      AND EXISTS (
@@ -45,11 +45,11 @@ BEGIN
            AND g.heartbeat_at >= now()-INTERVAL '90 seconds'
            AND g.sms_permission_ready AND g.telephony_ready AND g.network_ready
            AND g.accept_pool_jobs
-         GROUP BY g.id
+         GROUP BY g.id,g.created_at
     ),
     pool AS (
         SELECT id,
-               row_number() OVER (ORDER BY active_batches,id)-1 AS gateway_slot,
+               row_number() OVER (ORDER BY active_batches,created_at,id)-1 AS gateway_slot,
                count(*) OVER () AS gateway_count
           FROM gateway_load
     ),
