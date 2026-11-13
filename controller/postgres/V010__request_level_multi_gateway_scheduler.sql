@@ -198,11 +198,7 @@ BEGIN
      RETURNING health_state INTO resulting_state;
 
     IF previous_state IS DISTINCT FROM resulting_state THEN
-        INSERT INTO dm_gateway_health_events(gateway_id,previous_state,new_state,app_version)
-        VALUES (p_gateway_id,previous_state,resulting_state,p_app_version);
-        INSERT INTO dm_gateway_audit_events(gateway_id,event_type,details)
-        VALUES (p_gateway_id,'GATEWAY_HEALTH_CHANGED',
-                jsonb_build_object('previous_state',previous_state,'new_state',resulting_state));
+        -- V013 records the health transition through a single table trigger.
         PERFORM dm_rebalance_unstarted_batches();
     END IF;
     RETURN resulting_state;
