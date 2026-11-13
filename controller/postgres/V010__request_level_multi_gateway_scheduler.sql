@@ -161,9 +161,7 @@ BEGIN
         INSERT INTO dm_gateway_audit_events(gateway_id,event_type,details)
         VALUES (p_gateway_id,'GATEWAY_HEALTH_CHANGED',
                 jsonb_build_object('previous_state',previous_state,'new_state',resulting_state));
-        IF resulting_state='READY' THEN
-            PERFORM dm_rebalance_unstarted_batches();
-        END IF;
+        PERFORM dm_rebalance_unstarted_batches();
     END IF;
     RETURN resulting_state;
 END;
@@ -268,5 +266,47 @@ BEGIN
                         selected_job.attempt_count+1,new_expiry;
 END;
 $$;
+
+
+
+CREATE OR REPLACE FUNCTION dm_set_gateway_pool_participation(
+    p_owner_user_id UUID,
+    p_gateway_id UUID,
+    p_enabled BOOLEAN
+)
+RETURNS BOOLEAN LANGUAGE plpgsql AS $
+BEGIN
+    UPDATE dm_gateways
+       SET accept_pool_jobs=p_enabled,updated_at=now()
+     WHERE id=p_gateway_id AND owner_user_id=p_owner_user_id
+       AND revoked_at IS NULL;
+    IF NOT FOUND THEN RETURN FALSE; END IF;
+    INSERT INTO dm_gateway_audit_events(actor_user_id,gateway_id,event_type,details)
+    VALUES (p_owner_user_id,p_gateway_id,
+            CASE WHEN p_enabled THEN 'POOL_OPT_IN' ELSE 'POOL_OPT_OUT' END,
+            jsonb_build_object('accept_pool_jobs',p_enabled));
+    PERFORM dm_rebalance_unstarted_batches();
+    RETURN TRUE;
+END;
+$;
+
+CREATE OR REPLACE FUNCTION dm_revoke_personal_gateway(
+    p_owner_user_id UUID,
+    p_gateway_id UUID
+)
+RETURNS BOOLEAN LANGUAGE plpgsql AS $
+BEGIN
+    UPDATE dm_gateways
+       SET revoked_at=now(),health_state='OFFLINE',
+           accept_pool_jobs=FALSE,updated_at=now()
+     WHERE id=p_gateway_id AND owner_user_id=p_owner_user_id
+       AND revoked_at IS NULL;
+    IF NOT FOUND THEN RETURN FALSE; END IF;
+    INSERT INTO dm_gateway_audit_events(actor_user_id,gateway_id,event_type)
+    VALUES (p_owner_user_id,p_gateway_id,'PERSONAL_GATEWAY_REVOKED');
+    PERFORM dm_rebalance_unstarted_batches();
+    RETURN TRUE;
+END;
+$;
 
 COMMIT;
