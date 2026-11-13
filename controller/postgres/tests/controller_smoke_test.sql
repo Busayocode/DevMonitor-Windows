@@ -66,7 +66,7 @@ BEGIN
     -- Gateway A starts request 1. When Gateway B becomes ready, the remaining
     -- unstarted request batches distribute B/A/B/A while request 1 stays with A.
     SELECT * INTO claim_row FROM dm_claim_next_job(gateway_a);
-    SELECT id INTO first_job FROM dm_check_jobs WHERE batch_id=batch_ids[1] ORDER BY enqueued_at,id LIMIT 1;
+    SELECT j.id INTO first_job FROM dm_check_jobs j WHERE j.batch_id=batch_ids[1] ORDER BY j.enqueued_at,j.id LIMIT 1;
     IF claim_row.job_id IS DISTINCT FROM first_job THEN
         RAISE EXCEPTION 'Gateway A did not start the oldest request batch';
     END IF;
@@ -113,7 +113,7 @@ BEGIN
     END IF;
 
     SELECT * INTO claim_b FROM dm_claim_next_job(gateway_b);
-    SELECT id INTO job_id FROM dm_check_jobs WHERE batch_id=batch_ids[2] ORDER BY enqueued_at,id LIMIT 1;
+    SELECT j.id INTO job_id FROM dm_check_jobs j WHERE j.batch_id=batch_ids[2] ORDER BY j.enqueued_at,j.id LIMIT 1;
     IF claim_b.job_id IS DISTINCT FROM job_id THEN
         RAISE EXCEPTION 'Gateway B did not start request 2 after becoming ready';
     END IF;
