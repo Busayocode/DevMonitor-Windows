@@ -41,10 +41,20 @@ async def expired_lease_reaper() -> None:
         try:
             def run_once():
                 with pool.connection() as connection:
-                    return connection.execute("SELECT * FROM dm_reap_expired_attempts()").fetchone()
+                    offline = connection.execute(
+                        "SELECT dm_mark_stale_gateways_offline() AS gateways_marked_offline"
+                    ).fetchone()
+                    expired = connection.execute(
+                        "SELECT * FROM dm_reap_expired_attempts()"
+                    ).fetchone()
+                    return {"health": offline, "leases": expired}
             counts = await asyncio.to_thread(run_once)
-            if counts and (counts["requeued_jobs"] or counts["quarantined_gateways"]):
-                logger.warning("Gateway lease recovery: %s", counts)
+            health = counts["health"] or {}
+            leases = counts["leases"] or {}
+            if (health.get("gateways_marked_offline", 0)
+                or leases.get("requeued_jobs", 0)
+                or leases.get("quarantined_gateways", 0)):
+                logger.warning("Gateway recovery and failover: %s", counts)
         except Exception:
             logger.exception("Gateway lease recovery pass failed")
 
