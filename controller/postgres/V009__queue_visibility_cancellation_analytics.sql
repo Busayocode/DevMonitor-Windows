@@ -96,7 +96,7 @@ CREATE OR REPLACE FUNCTION dm_complete_job_result(
     p_values_json JSONB,
     p_parser_version TEXT
 )
-RETURNS BOOLEAN LANGUAGE plpgsql AS $
+RETURNS BOOLEAN LANGUAGE plpgsql AS $$
 DECLARE attempt_row dm_job_attempts%ROWTYPE;
         job_row dm_check_jobs%ROWTYPE;
 BEGIN
@@ -140,7 +140,7 @@ BEGIN
      WHERE id=p_job_id;
     RETURN TRUE;
 END;
-$;
+$$;
 
 -- Cancellation is idempotent and scoped to the authenticated requester and tenant.
 -- The attempt row is locked before its job, matching the send-transition lock order.
