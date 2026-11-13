@@ -1,7 +1,7 @@
 # DevMonitor 5.0 — Phase 3 Controller Foundation
 
 **Branch:** `devmonitor-5.0-foundation`  
-**Status:** PostgreSQL schema, multi-Gateway request scheduler, queue/cancellation/analytics API and reference FastAPI service committed on the foundation branch; CI validation in progress, not deployed.  
+**Status:** PostgreSQL schema, multi-Gateway request scheduler, queue/cancellation/analytics API and reference FastAPI service committed on the foundation branch; CI validation passed (controller workflow run #43511984083); not deployed.  
 **Production impact:** None. No release ZIP, Full edition, Gateway client, main branch, Firebase project or live SMS workflow was changed.
 
 ## Objective
