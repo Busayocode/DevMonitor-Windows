@@ -83,6 +83,65 @@ CREATE TRIGGER dm_job_refresh_batch_lifecycle
 AFTER INSERT OR UPDATE OR DELETE ON dm_check_jobs
 FOR EACH ROW EXECUTE FUNCTION dm_refresh_batch_lifecycle();
 
+-- Batch lifecycle is maintained by dm_refresh_batch_lifecycle. Do not let
+-- this result handler overwrite CANCELLED/PARTIAL state after a user cancels.
+CREATE OR REPLACE FUNCTION dm_complete_job_result(
+    p_gateway_id UUID,
+    p_job_id UUID,
+    p_attempt_id UUID,
+    p_lease_token TEXT,
+    p_business_date DATE,
+    p_checked_at TIMESTAMPTZ,
+    p_received_at TIMESTAMPTZ,
+    p_values_json JSONB,
+    p_parser_version TEXT
+)
+RETURNS BOOLEAN LANGUAGE plpgsql AS $
+DECLARE attempt_row dm_job_attempts%ROWTYPE;
+        job_row dm_check_jobs%ROWTYPE;
+BEGIN
+    SELECT * INTO attempt_row
+      FROM dm_job_attempts
+     WHERE id=p_attempt_id
+       AND job_id=p_job_id
+       AND gateway_id=p_gateway_id
+       AND lease_token_hash=digest(decode(p_lease_token,'hex'),'sha256')
+       AND state IN ('LEASED','SENDING','AWAITING_REPLY')
+     FOR UPDATE;
+    IF NOT FOUND THEN RETURN FALSE; END IF;
+
+    SELECT * INTO job_row FROM dm_check_jobs
+     WHERE id=p_job_id AND state IN ('LEASED','SENDING','AWAITING_REPLY')
+     FOR UPDATE;
+    IF NOT FOUND THEN RETURN FALSE; END IF;
+
+    INSERT INTO dm_daily_sms_results(
+        tenant_id,canonical_device_id,business_date,checked_at,received_at,
+        values_json,gateway_id,job_id,attempt_id,parser_version
+    ) VALUES (
+        job_row.tenant_id,job_row.canonical_device_id,p_business_date,
+        p_checked_at,p_received_at,p_values_json,p_gateway_id,
+        p_job_id,p_attempt_id,p_parser_version
+    )
+    ON CONFLICT (tenant_id,canonical_device_id,business_date)
+    DO UPDATE SET checked_at=EXCLUDED.checked_at,
+                  received_at=EXCLUDED.received_at,
+                  values_json=EXCLUDED.values_json,
+                  gateway_id=EXCLUDED.gateway_id,
+                  job_id=EXCLUDED.job_id,
+                  attempt_id=EXCLUDED.attempt_id,
+                  parser_version=EXCLUDED.parser_version
+    WHERE EXCLUDED.checked_at > dm_daily_sms_results.checked_at;
+
+    UPDATE dm_job_attempts
+       SET state='COMPLETED',reply_received_at=p_received_at,completed_at=now()
+     WHERE id=p_attempt_id;
+    UPDATE dm_check_jobs SET state='COMPLETED',updated_at=now()
+     WHERE id=p_job_id;
+    RETURN TRUE;
+END;
+$;
+
 -- Cancellation is idempotent and scoped to the authenticated requester and tenant.
 -- The attempt row is locked before its job, matching the send-transition lock order.
 -- A LEASED attempt can be rejected safely; SENDING/AWAITING_REPLY/AMBIGUOUS attempts
