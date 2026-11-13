@@ -27,8 +27,13 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS dm_gateway_ready_since ON dm_gateways;
-CREATE TRIGGER dm_gateway_ready_since
-BEFORE INSERT OR UPDATE OF health_state ON dm_gateways
+DROP TRIGGER IF EXISTS dm_gateway_ready_since_insert ON dm_gateways;
+DROP TRIGGER IF EXISTS dm_gateway_ready_since_update ON dm_gateways;
+CREATE TRIGGER dm_gateway_ready_since_insert
+BEFORE INSERT ON dm_gateways
+FOR EACH ROW EXECUTE FUNCTION dm_set_gateway_ready_since();
+CREATE TRIGGER dm_gateway_ready_since_update
+BEFORE UPDATE OF health_state ON dm_gateways
 FOR EACH ROW EXECUTE FUNCTION dm_set_gateway_ready_since();
 
 CREATE OR REPLACE FUNCTION dm_capture_gateway_health_transition()
