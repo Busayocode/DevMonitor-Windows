@@ -13,7 +13,7 @@ Status: isolated Kotlin reference scheduler; smoke-tested, not integrated into e
 - An active 3030 transaction is never interrupted. If the owner submits during another user's active transaction, it finishes safely and the owner's request wins the next claim.
 
 ## Shared-pool fairness
-- Shared jobs are selected round-robin by access scope. One account's large batch therefore cannot monopolize all gateway claims.
+- Shared jobs use hierarchical round-robin scheduling: the controller rotates across tenants, then rotates across authenticated requesters within the selected tenant. This means User B gets a turn even when User A and User B belong to the same company and User A submitted a much larger batch.
 - Personal jobs reserved for a healthy paired gateway do not block other tenants' shared jobs.
 - Workers claim one job at a time dynamically; there are no fixed batch slices.
 
@@ -23,7 +23,7 @@ Status: isolated Kotlin reference scheduler; smoke-tested, not integrated into e
 3. Ambiguous timeout quarantines a gateway.
 4. Older delayed results cannot overwrite newer daily values.
 5. Idempotent submissions do not create duplicates.
-6. A second tenant gets a turn before the first tenant's batch drains.
+6. A second tenant gets a turn before the first tenant's batch drains, and a second requester in the same tenant gets a turn before the first requester drains their batch.
 7. Personal gateway claims its owner's work ahead of older shared work.
 8. Owner work waits for an already-started pool transaction, then takes the next claim.
 9. Offline personal gateway permits pool failover.
