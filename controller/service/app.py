@@ -887,6 +887,10 @@ def cancel_check_batch(
     ).fetchone()
     if row is None or not row["accepted"]:
         raise HTTPException(status_code=404, detail="Batch not found")
+    cancellation = connection.execute(
+        "SELECT cancellation_requested_at FROM dm_check_batches WHERE id=%s AND tenant_id=%s AND requested_by_user_id=%s",
+        (batch_id, tenant_id, user["id"]),
+    ).fetchone()
     return jsonable_encoder({
         "batch_id": batch_id,
         "status": row["batch_status"],
@@ -894,7 +898,7 @@ def cancel_check_batch(
         "completed_devices": row["completed_jobs"],
         "cancelled_devices": row["cancelled_jobs"],
         "in_flight_devices": row["in_flight_jobs"],
-        "cancellation_requested": True,
+        "cancellation_requested": bool(cancellation and cancellation["cancellation_requested_at"]),
     })
 
 
