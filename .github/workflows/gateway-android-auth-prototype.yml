@@ -1,0 +1,48 @@
+name: Gateway Android Firebase Auth Prototype
+
+on:
+  push:
+    branches:
+      - devmonitor-5.0-foundation
+    paths:
+      - "prototypes/gateway-auth-android/**"
+      - ".github/workflows/gateway-android-auth-prototype.yml"
+  pull_request:
+    branches:
+      - devmonitor-5.0-foundation
+    paths:
+      - "prototypes/gateway-auth-android/**"
+      - ".github/workflows/gateway-android-auth-prototype.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Run unit tests
+        working-directory: prototypes/gateway-auth-android
+        run: gradle :gateway-auth-android:testDebugUnitTest
+
+      - name: Assemble Android library
+        working-directory: prototypes/gateway-auth-android
+        run: gradle :gateway-auth-android:assembleDebug
