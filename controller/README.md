@@ -2,7 +2,7 @@
 
 This folder contains the first durable-controller database/API foundation for DevMonitor 5.0 Gateway Edition.
 
-**Status:** Reference PostgreSQL schema and API contract only. No server has been deployed, no database provisioned, and no existing Firebase project or app edition has been changed.
+**Status:** PostgreSQL schema, OpenAPI contract and a reference FastAPI service are implemented in the development branch. Nothing has been deployed, no database provisioned, and no existing Firebase project or app edition has been changed.
 
 ## Files
 
@@ -12,7 +12,11 @@ This folder contains the first durable-controller database/API foundation for De
 - `postgres/V004__profile_specific_reply_timeouts.sql` — preserves the existing 120-second standard wait and 180-second Partner wait as server-selected query-profile values.
 - `postgres/V005__operator_authorization.sql` — requires an explicit controller-operator role for ambiguous-attempt resolution and quarantine release.
 - `postgres/V006__batch_integrity_and_gateway_revocation.sql` — binds each job to the exact batch tenant/requester, requires a SHA-256 request fingerprint for new batches, and supports owner-authorized gateway revocation.
-- `api/openapi.yaml` — proposed HTTPS contract for clients, personal gateway management and gateway workers.
+- `postgres/V007__atomic_attempt_transitions.sql` — locks and validates attempt/job state transitions consistently, including definitive pre-transmission send failure.
+- `api/openapi.yaml` — HTTPS contract for clients, personal gateway management and gateway workers.
+- `service/app.py` — reference FastAPI handlers for user authentication, gateway-token authentication, batches, cached history, personal gateways, heartbeats, claims and result submission.
+- `service/requirements.txt`, `service/Dockerfile`, `service/.env.example` — local service packaging and configuration template.
+- `service/tests/test_helpers.py` — unit tests for token hashing, request idempotency fingerprints, history limits and existing SMS wait profiles.
 
 ## Database choice
 
@@ -30,6 +34,7 @@ Apply to a fresh, dedicated PostgreSQL database in this exact order:
 4. `V004__profile_specific_reply_timeouts.sql`
 5. `V005__operator_authorization.sql`
 6. `V006__batch_integrity_and_gateway_revocation.sql`
+7. `V007__atomic_attempt_transitions.sql`
 
 The migrations require PostgreSQL with the `pgcrypto` extension available. Do not apply them to a production database until they have passed integration tests on the selected PostgreSQL version.
 
@@ -85,6 +90,6 @@ The API must verify tenant membership and active device access before reading `d
 
 ## Validation status
 
-GitHub Actions run [#10](https://github.com/Busayocode/DevMonitor-Windows/actions/runs/43427348246) successfully applied V001–V006 to PostgreSQL 16 and passed the controller smoke tests for personal priority, pool reservation, tenant fairness, result persistence, pre-send requeue, post-send quarantine and operator recovery. A follow-up test for stale-result protection is being added now. This is an isolated disposable CI database, not a provisioned production database. Cross-process load/concurrency tests, identity-provider tests, restart/recovery tests and a live phone test are still required before any phone connects.
+GitHub Actions run [#10](https://github.com/Busayocode/DevMonitor-Windows/actions/runs/43427348246) successfully applied V001–V006 to PostgreSQL 16 and passed the first controller smoke suite. A follow-up run is validating V001–V007, stale-result protection and the FastAPI helper tests. CI uses a disposable PostgreSQL service; this is not a provisioned production database. Cross-process load/concurrency tests, identity-provider integration, full restart/recovery tests and a live phone test are still required before any phone connects.
 
 The OpenAPI document is a contract, not an implemented HTTP server. The next implementation step is a small HTTPS service with identity-provider verification, gateway token verification, transactional repository methods, structured logs and health checks. Backend hosting/provider and costs remain unselected.
