@@ -895,13 +895,11 @@ def _queue_snapshot(connection, batch_id: UUID, tenant_id: UUID, user_id: UUID) 
     requests_ahead = int(ahead["requests_ahead"] or 0)
     remaining = int(counts["remaining_devices"] or 0)
     started = int(counts["active_devices"] or 0) > 0 or int(counts["completed_devices"] or 0) > 0
-    can_estimate = bool(gateway and gateway["available"]) and batch["assigned_gateway_id"] is not None
-    estimated_start = 0 if started else (round(devices_ahead * float(service_seconds)) if can_estimate else None)
-    estimated_completion = (
-        round((devices_ahead + remaining) * float(service_seconds))
-        if can_estimate else None
-    )
-    queue_position = requests_ahead + 1 if batch["assigned_gateway_id"] is not None else requests_ahead + 1
+    terminal = batch["status"] in ("COMPLETED","PARTIAL","FAILED","CANCELLED")
+    can_estimate = bool(gateway and gateway["available"]) and batch["assigned_gateway_id"] is not None and not terminal
+    estimated_start = (0 if started else round(devices_ahead * float(service_seconds))) if can_estimate else None
+    estimated_completion = round((devices_ahead + remaining) * float(service_seconds)) if can_estimate else None
+    queue_position = requests_ahead + 1 if not terminal else None
 
     return jsonable_encoder({
         "batch_id": batch_id,
