@@ -61,7 +61,16 @@ BEGIN
         ON b.tenant_id=t.id AND b.cancellation_requested_at IS NULL
       LEFT JOIN dm_check_jobs j
         ON j.batch_id=b.id
-     GROUP BY t.id;
+     GROUP BY t.id
+    ON CONFLICT (tenant_id,snapshot_minute) DO UPDATE
+       SET captured_at=EXCLUDED.captured_at,
+           pending_devices=EXCLUDED.pending_devices,
+           waiting_devices=EXCLUDED.waiting_devices,
+           active_devices=EXCLUDED.active_devices,
+           waiting_requests=EXCLUDED.waiting_requests,
+           active_requests=EXCLUDED.active_requests,
+           ready_gateways=EXCLUDED.ready_gateways,
+           busy_gateways=EXCLUDED.busy_gateways;
 
     GET DIAGNOSTICS inserted_count = ROW_COUNT;
     DELETE FROM dm_tenant_queue_snapshots
