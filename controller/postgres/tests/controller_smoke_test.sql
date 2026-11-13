@@ -118,6 +118,25 @@ BEGIN
         RAISE EXCEPTION 'Gateway B did not start request 2 after becoming ready';
     END IF;
 
+    -- Once a request has started, a normal rebalance between SMS attempts must
+    -- keep the remaining devices on that Gateway while it remains healthy.
+    accepted := dm_mark_attempt_sending(gateway_a,claim_row.job_id,claim_row.attempt_id,claim_row.lease_token);
+    IF NOT accepted THEN RAISE EXCEPTION 'could not mark Gateway A's first request sending'; END IF;
+    accepted := dm_mark_attempt_awaiting_reply(gateway_a,claim_row.job_id,claim_row.attempt_id,
+                                               claim_row.lease_token,now(),120);
+    IF NOT accepted THEN RAISE EXCEPTION 'could not await Gateway A's first request reply'; END IF;
+    accepted := dm_complete_job_result(
+        gateway_a,claim_row.job_id,claim_row.attempt_id,claim_row.lease_token,
+        CURRENT_DATE,now(),now(),
+        '{"todayCount":3,"mtdCount":30,"active":20,"bar48":1,"bar96":0,"duplicates":0,"monthlyTarget":100}'::jsonb,
+        'controller-test-parser');
+    IF NOT accepted THEN RAISE EXCEPTION 'Gateway A first request result was not accepted'; END IF;
+    PERFORM dm_rebalance_unstarted_batches();
+    IF (SELECT assigned_gateway_id FROM dm_check_batches WHERE id=batch_ids[1]) IS DISTINCT FROM gateway_a
+       OR (SELECT assigned_gateway_id FROM dm_check_batches WHERE id=batch_ids[2]) IS DISTINCT FROM gateway_b THEN
+        RAISE EXCEPTION 'started request batches moved during a normal between-device rebalance';
+    END IF;
+
     -- Historical analytics snapshot captures the live shared workload without
     -- storing any other user's device identifiers in the snapshot table.
     PERFORM dm_capture_tenant_queue_snapshots();
