@@ -85,6 +85,6 @@ The API must verify tenant membership and active device access before reading `d
 
 ## Validation status
 
-No PostgreSQL server or `psql` executable was available in the development environment when this reference was authored. Therefore these migrations have **not** been executed against PostgreSQL. They must pass migration, concurrency, authorization, lease-expiry, failover, duplicate-result and restart-recovery integration tests before any phone connects.
+GitHub Actions run [#10](https://github.com/Busayocode/DevMonitor-Windows/actions/runs/43427348246) successfully applied V001–V006 to PostgreSQL 16 and passed the controller smoke tests for personal priority, pool reservation, tenant fairness, result persistence, pre-send requeue, post-send quarantine and operator recovery. A follow-up test for stale-result protection is being added now. This is an isolated disposable CI database, not a provisioned production database. Cross-process load/concurrency tests, identity-provider tests, restart/recovery tests and a live phone test are still required before any phone connects.
 
 The OpenAPI document is a contract, not an implemented HTTP server. The next implementation step is a small HTTPS service with identity-provider verification, gateway token verification, transactional repository methods, structured logs and health checks. Backend hosting/provider and costs remain unselected.
