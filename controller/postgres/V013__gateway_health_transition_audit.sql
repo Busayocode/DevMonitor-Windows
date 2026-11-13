@@ -2,7 +2,7 @@
 BEGIN;
 
 CREATE OR REPLACE FUNCTION dm_set_gateway_ready_since()
-RETURNS TRIGGER LANGUAGE plpgsql AS $
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.health_state='READY' THEN
         IF TG_OP='INSERT' OR OLD.health_state IS DISTINCT FROM 'READY' THEN
@@ -15,7 +15,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS dm_gateway_ready_since ON dm_gateways;
 CREATE TRIGGER dm_gateway_ready_since
