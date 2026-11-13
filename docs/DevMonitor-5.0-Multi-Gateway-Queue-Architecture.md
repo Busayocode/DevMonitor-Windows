@@ -17,8 +17,8 @@ A request remains a single user-owned batch containing individually tracked devi
 - Preserve a global arrival sequence for every request and its device jobs.
 - Allocate pending work across all healthy, eligible Gateways so multiple Gateways can process in parallel.
 - Respect personal-Gateway ownership/preference and explicit shared-pool opt-in rules already defined by the controller.
-- Preserve the existing tenant/requester fairness policy; do not replace it with an unfair global strict-FIFO rule that lets one user monopolize capacity.
-- Within the applicable fairness/priority class, use queue order when allocating work.
+- Use request-level FIFO ordering: older request batches are allocated before later batches on each Gateway queue. Do not interleave the devices of a later request ahead of unfinished devices in an earlier request assigned to the same Gateway.
+- A Gateway owns one request batch at a time and processes that batch's devices in request order. Other Gateways process other request batches concurrently. This supersedes the earlier per-device tenant/requester round-robin dispatch rule; tenant membership, authorization and data isolation remain mandatory.
 - Rebalance **unstarted** work when a new eligible Gateway becomes available or an existing Gateway becomes unavailable.
 - Do not hard-code alternating assignment as the only algorithm. Alternating distribution is a simple illustration; actual assignment should account for Gateway health, capacity, eligibility, owner preference and outstanding workload.
 
@@ -29,7 +29,7 @@ Suppose one Gateway initially has five users' requests in the shared workload, o
 - Gateway A: User 1, User 3, User 5.
 - Gateway B: User 2, User 4.
 
-This illustrates parallel distribution while retaining the original relative order within each Gateway. It is not a requirement that every real-world allocation alternate users exactly; capacity, eligibility and fairness rules take precedence.
+This illustrates the intended round-robin request allocation when the two Gateways have comparable load. Actual assignment also respects Gateway health, personal ownership/preference, shared-pool opt-in and any request already in progress.
 
 If Gateway B later becomes unavailable, its unstarted work returns to the scheduling pool and can be claimed by Gateway A or another healthy Gateway. Queue positions and estimates are recalculated.
 
