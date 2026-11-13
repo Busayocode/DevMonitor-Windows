@@ -102,8 +102,6 @@ BEGIN
     END IF;
 
     -- Tenant C is older and gets the first fair turn; tenant D gets the next one.
-    INSERT INTO dm_tenant_device_access(tenant_id,canonical_device_id) VALUES
-      (tenant_c,'GLO-GD-FAIR-C'), (tenant_d,'GLO-GD-FAIR-D');
     INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
     VALUES (tenant_c,user_a,'fair-c','GATEWAY',1,digest('fair-c','sha256')) RETURNING id INTO batch_c;
     INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
