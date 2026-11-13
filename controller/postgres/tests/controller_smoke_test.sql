@@ -90,6 +90,27 @@ BEGIN
     IF ahead_count <> 15 THEN
         RAISE EXCEPTION 'request 3 should see 15 devices ahead on Gateway A, got %',ahead_count;
     END IF;
+    SELECT count(*) INTO ahead_count
+      FROM dm_check_jobs j JOIN dm_check_batches b ON b.id=j.batch_id
+     WHERE b.assigned_gateway_id=gateway_a AND b.id<>batch_ids[5]
+       AND b.created_at < (SELECT created_at FROM dm_check_batches WHERE id=batch_ids[5])
+       AND j.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS');
+    IF ahead_count <> 35 THEN
+        RAISE EXCEPTION 'request 5 should see 35 devices ahead on Gateway A, got %',ahead_count;
+    END IF;
+    SELECT count(*) INTO ahead_count
+      FROM dm_check_jobs j JOIN dm_check_batches b ON b.id=j.batch_id
+     WHERE b.assigned_gateway_id=gateway_b AND b.id<>batch_ids[4]
+       AND b.created_at < (SELECT created_at FROM dm_check_batches WHERE id=batch_ids[4])
+       AND j.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS');
+    IF ahead_count <> 35 THEN
+        RAISE EXCEPTION 'request 4 should see 35 devices ahead on Gateway B, got %',ahead_count;
+    END IF;
+    SELECT count(*) INTO ahead_count FROM dm_check_jobs
+     WHERE state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS');
+    IF ahead_count <> 85 THEN
+        RAISE EXCEPTION 'global queue should contain 85 pending devices, got %',ahead_count;
+    END IF;
 
     SELECT * INTO claim_b FROM dm_claim_next_job(gateway_b);
     SELECT id INTO job_id FROM dm_check_jobs WHERE batch_id=batch_ids[2] ORDER BY enqueued_at,id LIMIT 1;
