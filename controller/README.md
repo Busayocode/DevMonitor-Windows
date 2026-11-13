@@ -13,6 +13,7 @@ This folder contains the first durable-controller database/API foundation for De
 - `postgres/V005__operator_authorization.sql` — requires an explicit controller-operator role for ambiguous-attempt resolution and quarantine release.
 - `postgres/V006__batch_integrity_and_gateway_revocation.sql` — binds each job to the exact batch tenant/requester, requires a SHA-256 request fingerprint for new batches, and supports owner-authorized gateway revocation.
 - `postgres/V007__atomic_attempt_transitions.sql` — locks and validates attempt/job state transitions consistently, including definitive pre-transmission send failure.
+- `postgres/V008__requester_fair_scheduling.sql` — adds hierarchical fairness: tenant rotation first, then round-robin across requesters within each tenant.
 - `api/openapi.yaml` — HTTPS contract for clients, personal gateway management and gateway workers.
 - `service/app.py` — reference FastAPI handlers for user authentication, gateway-token authentication, batches, cached history, personal gateways, heartbeats, claims and result submission.
 - `service/requirements.txt`, `service/Dockerfile`, `service/.env.example` — local service packaging and configuration template.
@@ -35,6 +36,7 @@ Apply to a fresh, dedicated PostgreSQL database in this exact order:
 5. `V005__operator_authorization.sql`
 6. `V006__batch_integrity_and_gateway_revocation.sql`
 7. `V007__atomic_attempt_transitions.sql`
+8. `V008__requester_fair_scheduling.sql`
 
 The migrations require PostgreSQL with the `pgcrypto` extension available. Do not apply them to a production database until they have passed integration tests on the selected PostgreSQL version.
 
@@ -55,7 +57,7 @@ The migrations require PostgreSQL with the `pgcrypto` extension available. Do no
 - A gateway is limited to one unresolved 3030 attempt at a time. The partial unique index also blocks claims while an attempt is AMBIGUOUS.
 - Owner-preferred jobs are claimed before shared-pool jobs by that owner's paired gateway.
 - A healthy preferred gateway reserves its owner's job. Another pool gateway may take it only when the preferred gateway is unavailable.
-- Shared jobs rotate across tenant cursors. Each worker claims one job at a time; there are no fixed batch slices.
+- Shared jobs rotate across tenant cursors, then across requester cursors inside the selected tenant. This ensures two users in the same company also take alternating turns. Each worker claims one job at a time; there are no fixed batch slices.
 - The gateway first claims a short lease, then acknowledges SENDING before it attempts the SMS. An expired lease before SENDING can safely return to the queue. Once sending may have happened, expiry becomes AMBIGUOUS and quarantines the gateway.
 - A late response is accepted only against the same live attempt, gateway, job, lease token, tenant and device. It cannot complete a later job.
 - A completed result updates the daily cache only when its checked_at is newer than the stored value for that tenant/device/business date.
