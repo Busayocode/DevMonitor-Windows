@@ -949,8 +949,11 @@ def read_gateway_analytics(
         ),
         gateways AS (
             SELECT g.* FROM dm_gateways g
-             JOIN dm_tenant_memberships m
-               ON m.user_id=g.owner_user_id AND m.tenant_id=%s
+             WHERE g.accept_pool_jobs
+                OR EXISTS (
+                    SELECT 1 FROM dm_tenant_memberships m
+                     WHERE m.user_id=g.owner_user_id AND m.tenant_id=%s
+                )
         )
         SELECT
           (SELECT count(*) FROM batches) AS total_requests,
@@ -1041,6 +1044,10 @@ def read_gateway_analytics(
            AND g.heartbeat_at >= now()-INTERVAL '90 seconds'
            AND EXISTS (SELECT 1 FROM dm_job_attempts a WHERE a.gateway_id=g.id
                         AND a.state IN ('LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS'))
+           AND (g.accept_pool_jobs OR EXISTS (
+                SELECT 1 FROM dm_tenant_memberships m
+                 WHERE m.user_id=g.owner_user_id AND m.tenant_id=%s
+           ))
         """,
         (tenant_id,),
     ).fetchone()["count"] or 0)
