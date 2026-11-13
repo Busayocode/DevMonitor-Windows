@@ -764,17 +764,56 @@ def _queue_snapshot(connection, batch_id: UUID, tenant_id: UUID, user_id: UUID) 
     if batch["assigned_gateway_id"] is not None:
         ahead = connection.execute(
             """
+            WITH current_batch AS (
+                SELECT b.id,b.created_at,b.assigned_gateway_id,g.owner_user_id,
+                       EXISTS (
+                           SELECT 1 FROM dm_check_jobs own_job
+                            WHERE own_job.batch_id=b.id
+                              AND own_job.preferred_gateway_id=b.assigned_gateway_id
+                              AND own_job.requested_by_user_id=g.owner_user_id
+                       ) AS personal_priority
+                  FROM dm_check_batches b
+                  LEFT JOIN dm_gateways g ON g.id=b.assigned_gateway_id
+                 WHERE b.id=%s
+            )
             SELECT count(j.id) AS devices_ahead,
                    count(DISTINCT b.id) AS requests_ahead
-              FROM dm_check_batches b
+              FROM current_batch cb
+              JOIN dm_check_batches b ON b.assigned_gateway_id=cb.assigned_gateway_id
+                                     AND b.id<>cb.id
               JOIN dm_check_jobs j ON j.batch_id=b.id
-             WHERE b.assigned_gateway_id=%s
-               AND b.id<>%s
-               AND (b.created_at,b.id) < (%s,%s)
-               AND b.cancellation_requested_at IS NULL
+             WHERE b.cancellation_requested_at IS NULL
                AND j.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')
+               AND (
+                 (cb.personal_priority
+                  AND EXISTS (
+                      SELECT 1 FROM dm_check_jobs prior_personal
+                       WHERE prior_personal.batch_id=b.id
+                         AND prior_personal.preferred_gateway_id=cb.assigned_gateway_id
+                         AND prior_personal.requested_by_user_id=cb.owner_user_id
+                  )
+                  AND (b.created_at,b.id)<(cb.created_at,cb.id))
+                 OR
+                 (NOT cb.personal_priority AND (
+                    EXISTS (
+                        SELECT 1 FROM dm_check_jobs prior_personal
+                         WHERE prior_personal.batch_id=b.id
+                           AND prior_personal.preferred_gateway_id=cb.assigned_gateway_id
+                           AND prior_personal.requested_by_user_id=cb.owner_user_id
+                    )
+                    OR (
+                        NOT EXISTS (
+                            SELECT 1 FROM dm_check_jobs prior_personal
+                             WHERE prior_personal.batch_id=b.id
+                               AND prior_personal.preferred_gateway_id=cb.assigned_gateway_id
+                               AND prior_personal.requested_by_user_id=cb.owner_user_id
+                        )
+                        AND (b.created_at,b.id)<(cb.created_at,cb.id)
+                    )
+                 ))
+               )
             """,
-            (batch["assigned_gateway_id"], batch_id, batch["created_at"], batch_id),
+            (batch_id,),
         ).fetchone()
         gateway = connection.execute(
             """
