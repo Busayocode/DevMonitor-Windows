@@ -1003,6 +1003,23 @@ def read_gateway_analytics(
                     SELECT 1 FROM dm_tenant_memberships m
                      WHERE m.user_id=g.owner_user_id AND m.tenant_id=%s
                 )
+        ),
+        health_segments AS (
+            SELECT h.gateway_id,h.new_state,h.event_at,
+                   lead(h.event_at,1,now()) OVER (
+                       PARTITION BY h.gateway_id ORDER BY h.event_at
+                   ) AS next_at
+              FROM dm_gateway_health_events h
+              JOIN gateways g ON g.id=h.gateway_id
+             WHERE h.event_at >= now()-INTERVAL '30 days'
+        ),
+        uptime AS (
+            SELECT
+              sum(extract(epoch FROM (least(next_at,now())-greatest(event_at,now()-INTERVAL '30 days'))))
+                FILTER (WHERE new_state='READY') AS ready_seconds,
+              sum(extract(epoch FROM (least(next_at,now())-greatest(event_at,now()-INTERVAL '30 days'))))
+                AS observed_seconds
+              FROM health_segments
         )
         SELECT
           (SELECT count(*) FROM batches) AS total_requests,
@@ -1031,7 +1048,9 @@ def read_gateway_analytics(
              OR heartbeat_at IS NULL OR heartbeat_at < now()-INTERVAL '90 seconds') AS offline_gateways,
           (SELECT count(*) FROM dm_gateway_health_events h
              JOIN gateways g ON g.id=h.gateway_id
-            WHERE h.event_at >= now()-INTERVAL '30 days') AS health_transitions_30d
+            WHERE h.event_at >= now()-INTERVAL '30 days') AS health_transitions_30d,
+          (SELECT round(ready_seconds*100/nullif(observed_seconds,0),1) FROM uptime)
+             AS observed_uptime_percent_30d
         """,
         (tenant_id, tenant_id, tenant_id),
     ).fetchone()
@@ -1088,7 +1107,6 @@ def read_gateway_analytics(
     busy_gateways = int(connection.execute(
         """
         SELECT count(*) FROM dm_gateways g
-         JOIN dm_tenant_memberships m ON m.user_id=g.owner_user_id AND m.tenant_id=%s
          WHERE g.health_state='READY' AND g.revoked_at IS NULL
            AND g.heartbeat_at >= now()-INTERVAL '90 seconds'
            AND EXISTS (SELECT 1 FROM dm_job_attempts a WHERE a.gateway_id=g.id
@@ -1114,5 +1132,5 @@ def read_gateway_analytics(
         },
         "daily_activity": daily,
         "queue_depth_history_30d": queue_history,
-        "note": "Metrics are tenant-scoped. Queue snapshots are sampled every minute while the controller is running; gaps can occur during controller downtime. Gateway utilization is an instantaneous busy/ready ratio, not a time-weighted uptime measure.",
+        "note": "Metrics are tenant-scoped. Queue snapshots are sampled every minute while the controller is running; gaps can occur during controller downtime. Gateway utilization is an instantaneous busy/ready ratio. Observed uptime uses recorded health transitions and excludes periods without transition history.",
     })
