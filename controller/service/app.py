@@ -78,6 +78,14 @@ async def lifespan(_: FastAPI):
             db_pool = None
 
 
+app = FastAPI(
+    title="DevMonitor Gateway Controller",
+    version="0.1.0",
+    description="Reference controller API. Configure PostgreSQL and an OIDC identity provider before use.",
+    lifespan=lifespan,
+)
+
+
 class DeviceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     device_id: str = Field(min_length=1, max_length=128)
