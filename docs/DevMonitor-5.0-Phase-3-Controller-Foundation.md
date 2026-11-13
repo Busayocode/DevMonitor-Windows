@@ -84,7 +84,7 @@ The OpenAPI contract and reference handlers cover:
 
 ## Required validation before phone integration
 
-1. Apply V001–V012 to a clean PostgreSQL instance and verify migration success.
+1. Apply V001–V013 to a clean PostgreSQL instance and verify migration success.
 2. Test two or more workers concurrently claiming the same tenant queue; no duplicate job claim may occur.
 3. Test request-level FIFO ordering and round-robin distribution of whole request batches across multiple Gateways.
 4. Test personal owner priority, personal-only mode, pool opt-in/out and request-level Gateway reassignment.
