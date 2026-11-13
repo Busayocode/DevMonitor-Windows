@@ -62,7 +62,8 @@ The OpenAPI contract and reference handlers cover:
 
 ## Security requirements
 
-- User identity comes from a verified user JWT; internal user and tenant IDs are resolved server-side.
+- User identity comes from a Firebase Authentication ID token verified against the configured Firebase project (RS256 signature, exact project audience, issuer, expiry, issued-at time, authentication time and UID); internal user and tenant IDs are resolved server-side.
+- The Firebase project ID is deployment configuration, not a client-supplied claim. Google OAuth access tokens and Google Drive tokens are not accepted as user authentication.
 - Gateway identity comes from a verified random installation credential; the raw token is returned once and only its hash is stored.
 - A personal gateway can be selected only by its owner.
 - Tenant membership and active device grants are enforced before enqueue and cache/history reads.
@@ -73,7 +74,7 @@ The OpenAPI contract and reference handlers cover:
 ## What is not yet implemented
 
 - No deployed HTTPS service. The reference FastAPI handlers are source-only and still require environment configuration, deployment hardening and integration tests.
-- No selected identity provider or production authentication configuration.
+- Firebase Authentication is selected, and the FastAPI service now verifies Firebase ID tokens. The existing `Fieldpulse` Firebase project still needs its Authentication feature and sign-in provider checked/enabled in Firebase Console; no project settings have been changed yet.
 - No PostgreSQL instance, hosting provider, cloud project or paid service has been provisioned.
 - GitHub Actions run [#10](https://github.com/Busayocode/DevMonitor-Windows/actions/runs/43427348246) successfully applied V001–V006 to PostgreSQL 16 and passed the first database smoke suite. The suite exercised personal gateway priority, reservation from pool workers, tenant round-robin, result persistence, safe pre-send requeue, post-send ambiguity/quarantine and operator recovery. A follow-up stale-cache test is now being added.
 - Cross-process contention/load tests, identity-provider tests, full restart recovery and live gateway-phone tests have not yet run.
@@ -96,4 +97,4 @@ The OpenAPI contract and reference handlers cover:
 
 ## Next stage
 
-Production-harden the reference HTTPS service: configure and test the selected identity provider, create least-privilege PostgreSQL roles, add rate limits and operational monitoring, run cross-process concurrency and restart-recovery tests, then deploy to a selected host. Only after those gates pass should a test gateway phone be registered. Backend provider and operating cost must be reviewed and explicitly approved before provisioning.
+Production-harden the reference HTTPS service: confirm Firebase Authentication and the chosen sign-in provider are enabled in the Fieldpulse project, configure the exact Firebase project ID and run Firebase ID-token integration tests, create least-privilege PostgreSQL roles, add rate limits and operational monitoring, run cross-process concurrency and restart-recovery tests, then deploy to a selected host. Only after those gates pass should a test gateway phone be registered. Backend provider and operating cost must be reviewed and explicitly approved before provisioning.
