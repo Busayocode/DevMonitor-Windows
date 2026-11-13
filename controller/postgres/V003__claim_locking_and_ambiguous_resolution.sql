@@ -64,8 +64,8 @@ BEGIN
        AND j.requested_by_user_id = gateway_row.owner_user_id
        AND j.state IN ('QUEUED','RETRY_PENDING')
      ORDER BY j.enqueued_at, j.id
-     FOR UPDATE SKIP LOCKED
-     LIMIT 1;
+     LIMIT 1
+     FOR UPDATE SKIP LOCKED;
 
     IF NOT FOUND AND gateway_row.accept_pool_jobs THEN
         SELECT j.* INTO selected_job
@@ -89,8 +89,8 @@ BEGIN
                FOR UPDATE SKIP LOCKED
           ) j ON TRUE
          ORDER BY s.last_served_at NULLS FIRST, j.enqueued_at, s.tenant_id
-         FOR UPDATE OF s SKIP LOCKED
-         LIMIT 1;
+         LIMIT 1
+         FOR UPDATE OF s SKIP LOCKED;
 
         IF FOUND THEN
             UPDATE dm_tenant_dispatch_state
@@ -176,5 +176,28 @@ BEGIN
     RETURN TRUE;
 END;
 $$;
+
+
+-- Device entitlements must be active at the database boundary, not only in API code.
+CREATE OR REPLACE FUNCTION dm_validate_active_device_access()
+RETURNS TRIGGER LANGUAGE plpgsql AS $
+DECLARE access_state_value TEXT;
+BEGIN
+    SELECT access_state INTO access_state_value
+      FROM dm_tenant_device_access
+     WHERE tenant_id = NEW.tenant_id
+       AND canonical_device_id = NEW.canonical_device_id;
+    IF access_state_value IS DISTINCT FROM 'ACTIVE' THEN
+        RAISE EXCEPTION 'device is not actively authorized for this tenant'
+            USING ERRCODE = '42501';
+    END IF;
+    RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS dm_check_job_active_device_access ON dm_check_jobs;
+CREATE TRIGGER dm_check_job_active_device_access
+BEFORE INSERT OR UPDATE ON dm_check_jobs
+FOR EACH ROW EXECUTE FUNCTION dm_validate_active_device_access();
 
 COMMIT;
