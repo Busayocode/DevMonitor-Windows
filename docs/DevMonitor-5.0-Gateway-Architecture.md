@@ -429,7 +429,7 @@ The owner may switch pool participation off at any time. Turning it off prevents
 
 ### 15.4 Shared queue fairness
 
-Shared-pool scheduling must rotate across authenticated user/tenant scopes rather than drain one user's entire batch first. For example, with User A's 50 jobs and User B's 10 jobs queued, workers should take turns across scopes (A1, B1, A2, B2, and so on) while preserving FIFO order within each scope. This is a scheduling policy, not a promise of equal total completion time: gateways claim jobs dynamically as they become ready, and real completion depends on SMS response times and gateway health.
+Shared-pool scheduling is hierarchical. First rotate across tenants; within the selected tenant, rotate across authenticated requester accounts. For example, if User A has 50 jobs and User B has 10 jobs in the same company tenant, workers should take turns (A1, B1, A2, B2, and so on) while preserving FIFO order within each user's queue. If multiple tenants are active, the controller also rotates across tenants so a company with many requesters does not monopolize the entire pool. This is a scheduling policy, not a promise of equal total completion time: gateways claim jobs dynamically as they become ready, and real completion depends on SMS response times and gateway health.
 
 Personal jobs reserved for a healthy paired gateway do not block unrelated users' shared work. Personal jobs become eligible for shared failover only when the preferred gateway is unavailable under the controller's health policy.
 
