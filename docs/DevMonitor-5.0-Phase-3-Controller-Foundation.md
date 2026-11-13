@@ -1,7 +1,7 @@
 # DevMonitor 5.0 — Phase 3 Controller Foundation
 
 **Branch:** `devmonitor-5.0-foundation`  
-**Status:** PostgreSQL schema, OpenAPI contract and reference FastAPI service committed; CI database-tested, not deployed.  
+**Status:** PostgreSQL schema, multi-Gateway request scheduler, queue/cancellation/analytics API and reference FastAPI service committed on the foundation branch; CI validation in progress, not deployed.  
 **Production impact:** None. No release ZIP, Full edition, Gateway client, main branch, Firebase project or live SMS workflow was changed.
 
 ## Objective
@@ -52,7 +52,18 @@ The controller accepts the query-profile timeout selected by the server:
 
 A small transport grace period is added to the server lease. This does not change the user-visible SMS wait setting or existing retry policy.
 
-### 5. HTTP contract
+### 5. Multi-Gateway request queue and analytics (V009–V013)
+
+- One logical shared request queue is distributed across all eligible healthy Gateways. Whole request batches are allocated in FIFO order; different Gateways process requests concurrently.
+- A started batch remains pinned to its Gateway while it remains healthy. If that Gateway goes offline, its remaining unstarted device jobs can fail over after any live send is safely resolved.
+- Gateway load ties preserve the longer-ready Gateway as the first queue, while a Gateway already carrying active request work yields the next pending batch to a less-loaded Gateway.
+- A 90-second missed-heartbeat threshold marks a READY Gateway OFFLINE. Health transitions are audited and feed observed uptime analytics.
+- Queue snapshots expose devices and requests ahead on the assigned Gateway, global pending-device count, and approximate start/completion estimates based on recent Gateway reply times with 120-second Standard / 180-second Partner fallback profiles.
+- Users can cancel their own request. Queued and pre-send leased jobs are stopped; already-sent or ambiguous attempts remain protected until safely resolved. Completed results are retained.
+- Tenant OWNER/ADMIN analytics include request/device totals, cancellation/success/timeout rates, median queue wait and reply times, current Gateway health/utilization, observed uptime and sampled 30-day queue-depth history. Queue snapshots are sampled once per tenant per minute and retained for 90 days.
+- New endpoints: `GET /v1/client/check-batches/{batch_id}/queue`, `POST /v1/client/check-batches/{batch_id}/cancel`, and `GET /v1/client/tenants/{tenant_id}/gateway-analytics`.
+
+### 6. HTTP contract
 
 The OpenAPI contract and reference handlers cover:
 - Client batch submission and progress retrieval.
@@ -78,7 +89,7 @@ The OpenAPI contract and reference handlers cover:
 - No PostgreSQL instance, hosting provider, cloud project or paid service has been provisioned.
 - GitHub Actions run [#10](https://github.com/Busayocode/DevMonitor-Windows/actions/runs/43427348246) successfully applied V001–V006 to PostgreSQL 16 and passed the first database smoke suite. The suite exercised personal gateway priority, reservation from pool workers, tenant round-robin, result persistence, safe pre-send requeue, post-send ambiguity/quarantine and operator recovery. A follow-up stale-cache test is now being added.
 - Cross-process contention/load tests, identity-provider tests, full restart recovery and live gateway-phone tests have not yet run.
-- No Android Gateway Phone App or Gateway Edition client is connected.
+- No Android Gateway Phone App or Gateway Edition client is connected to the controller. The Full edition has not yet been wired to select/use a dedicated Gateway or display queue position, estimates and cancellation controls.
 - No SMS has been sent.
 - No production permission, manifest or build changes have been made.
 
