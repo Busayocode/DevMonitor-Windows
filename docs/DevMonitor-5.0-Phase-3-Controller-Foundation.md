@@ -20,6 +20,8 @@ The PostgreSQL migrations define:
 - Idempotent check batches and per-device jobs.
 - Individual gateway attempts with hashed lease tokens and lifecycle timestamps.
 - Daily SMS result cache, unique per tenant/device/business date.
+- Batch-to-job tenant/requester integrity and request fingerprints for idempotency replay validation.
+- Revocable personal gateway credentials and explicit controller-operator authorization.
 - Tenant fair-queue cursors and an audit trail.
 
 ### 2. Atomic scheduling
@@ -81,7 +83,7 @@ The OpenAPI draft defines:
 
 ## Required validation before phone integration
 
-1. Apply V001–V004 to a clean PostgreSQL instance and verify migration success.
+1. Apply V001–V006 to a clean PostgreSQL instance and verify migration success.
 2. Test two or more workers concurrently claiming the same tenant queue; no duplicate job claim may occur.
 3. Test tenant fairness with one large batch and one smaller batch.
 4. Test personal owner priority, personal-only mode and pool opt-in/out.
