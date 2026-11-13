@@ -243,6 +243,7 @@ jobs:
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
+          import os
           import re
 
           root = Path(os.environ["PROJECT_DIR"]) if "PROJECT_DIR" in os.environ else None
