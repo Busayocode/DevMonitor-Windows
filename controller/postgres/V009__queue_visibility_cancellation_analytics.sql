@@ -76,7 +76,7 @@ BEGIN
      WHERE id = target_batch;
     IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS dm_job_refresh_batch_lifecycle ON dm_check_jobs;
 CREATE TRIGGER dm_job_refresh_batch_lifecycle
