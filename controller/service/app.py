@@ -943,7 +943,7 @@ def read_check_batch_queue(
 def cancel_check_batch(
     batch_id: UUID,
     tenant_id: UUID,
-    body: CancellationRequest,
+    body: CancellationRequest | None = None,
     user=Depends(get_current_user),
     connection=Depends(get_db),
 ):
@@ -951,7 +951,7 @@ def cancel_check_batch(
         """
         SELECT * FROM dm_cancel_check_batch(%s,%s,%s,%s)
         """,
-        (batch_id, tenant_id, user["id"], body.reason),
+        (batch_id, tenant_id, user["id"], body.reason if body else None),
     ).fetchone()
     if row is None or not row["accepted"]:
         raise HTTPException(status_code=404, detail="Batch not found")
