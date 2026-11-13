@@ -3,7 +3,19 @@ BEGIN;
 
 ALTER TABLE dm_check_batches
     ADD COLUMN IF NOT EXISTS assigned_gateway_id UUID REFERENCES dm_gateways(id),
-    ADD COLUMN IF NOT EXISTS assignment_updated_at TIMESTAMPTZ;
+    ADD COLUMN IF NOT EXISTS assignment_updated_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS processing_started_at TIMESTAMPTZ;
+
+-- Backfill batches that had already received an attempt before this migration.
+UPDATE dm_check_batches b
+   SET processing_started_at=started.first_started_at
+  FROM (
+      SELECT j.batch_id,min(a.leased_at) AS first_started_at
+        FROM dm_check_jobs j
+        JOIN dm_job_attempts a ON a.job_id=j.id
+       GROUP BY j.batch_id
+  ) started
+ WHERE b.id=started.batch_id AND b.processing_started_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS dm_batches_gateway_assignment_idx
     ON dm_check_batches (assigned_gateway_id, created_at, id)
@@ -19,11 +31,12 @@ BEGIN
     WITH gateway_load AS (
         SELECT g.id,
                count(DISTINCT b.id) FILTER (
-                   WHERE EXISTS (
-                       SELECT 1 FROM dm_check_jobs active_job
-                        WHERE active_job.batch_id=b.id
-                          AND active_job.state IN ('LEASED','SENDING','AWAITING_REPLY')
-                   )
+                   WHERE b.processing_started_at IS NOT NULL
+                     AND EXISTS (
+                         SELECT 1 FROM dm_check_jobs pending_job
+                          WHERE pending_job.batch_id=b.id
+                            AND pending_job.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')
+                     )
                ) AS active_batches
           FROM dm_gateways g
           LEFT JOIN dm_check_batches b ON b.assigned_gateway_id=g.id
@@ -58,6 +71,28 @@ BEGIN
                SELECT 1 FROM dm_check_jobs j
                 WHERE j.batch_id=b.id
                   AND j.state IN ('LEASED','SENDING','AWAITING_REPLY')
+           )
+           AND (
+               b.processing_started_at IS NULL
+               OR NOT EXISTS (
+                   SELECT 1 FROM dm_gateways assigned
+                    WHERE assigned.id=b.assigned_gateway_id
+                      AND assigned.health_state='READY'
+                      AND assigned.revoked_at IS NULL
+                      AND assigned.heartbeat_at >= now()-INTERVAL '90 seconds'
+                      AND assigned.sms_permission_ready
+                      AND assigned.telephony_ready
+                      AND assigned.network_ready
+                      AND (
+                          assigned.accept_pool_jobs
+                          OR EXISTS (
+                              SELECT 1 FROM dm_check_jobs owner_job
+                               WHERE owner_job.batch_id=b.id
+                                 AND owner_job.preferred_gateway_id=assigned.id
+                                 AND owner_job.requested_by_user_id=assigned.owner_user_id
+                          )
+                      )
+               )
            )
     ),
     personal_targets AS (
@@ -271,8 +306,10 @@ BEGIN
      WHERE id=selected_job.id;
 
     UPDATE dm_check_batches
-       SET status='RUNNING',updated_at=now()
-     WHERE id=selected_job.batch_id AND status='QUEUED';
+       SET status='RUNNING',
+           processing_started_at=COALESCE(processing_started_at,now()),
+           updated_at=now()
+     WHERE id=selected_job.batch_id;
 
     RETURN QUERY SELECT selected_job.id,new_attempt_id,raw_lease_token,
                         selected_job.canonical_device_id,selected_job.query_profile,
