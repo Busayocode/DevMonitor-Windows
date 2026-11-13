@@ -16,6 +16,7 @@ BEGIN
             NEW.id,'GATEWAY_HEALTH_CHANGED',
             jsonb_build_object('previous_state',OLD.health_state,'new_state',NEW.health_state)
         );
+        PERFORM dm_rebalance_unstarted_batches();
     END IF;
     RETURN NEW;
 END;
