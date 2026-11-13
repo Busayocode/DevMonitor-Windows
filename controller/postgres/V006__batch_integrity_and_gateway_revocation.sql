@@ -16,6 +16,9 @@ ALTER TABLE dm_check_jobs
 CREATE OR REPLACE FUNCTION dm_require_batch_fingerprint()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
+    IF TG_OP = 'UPDATE' AND OLD.request_fingerprint IS NULL AND NEW.request_fingerprint IS NULL THEN
+        RETURN NEW;
+    END IF;
     IF NEW.request_fingerprint IS NULL OR octet_length(NEW.request_fingerprint) <> 32 THEN
         RAISE EXCEPTION 'batch request fingerprint must be a SHA-256 digest';
     END IF;
