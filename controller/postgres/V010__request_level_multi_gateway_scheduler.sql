@@ -28,9 +28,10 @@ CREATE INDEX IF NOT EXISTS dm_batches_gateway_assignment_idx
     ON dm_check_batches (assigned_gateway_id, created_at, id)
     WHERE cancellation_requested_at IS NULL;
 
--- Reassign only unstarted request batches. A live send/reply attempt stays with
--- its original phone; an AMBIGUOUS device remains quarantined but does not prevent
--- other, not-yet-started devices in the same request from moving to a healthy phone.
+-- Rebalance unstarted request batches when the pool changes. A started batch stays
+-- pinned while its Gateway is eligible; if that Gateway is unavailable, remaining
+-- unstarted jobs can fail over after live attempts resolve. An AMBIGUOUS device
+-- remains quarantined but does not block other not-yet-started devices in its batch.
 CREATE OR REPLACE FUNCTION dm_rebalance_unstarted_batches()
 RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE changed_count INTEGER;
