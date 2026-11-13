@@ -49,10 +49,27 @@ async def expired_lease_reaper() -> None:
             logger.exception("Gateway lease recovery pass failed")
 
 
+async def queue_metrics_snapshotter() -> None:
+    while True:
+        await asyncio.sleep(max(30, int(os.getenv("QUEUE_SNAPSHOT_INTERVAL_SECONDS", "60"))))
+        pool = db_pool
+        if pool is None:
+            continue
+        try:
+            def capture_once():
+                with pool.connection() as connection:
+                    return connection.execute("SELECT dm_capture_tenant_queue_snapshots() AS inserted").fetchone()
+            result = await asyncio.to_thread(capture_once)
+            logger.debug("Captured Gateway queue analytics snapshots: %s", result)
+        except Exception:
+            logger.exception("Gateway queue analytics snapshot failed")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global db_pool, jwks_client
     reaper_task = None
+    snapshot_task = None
     if DATABASE_URL:
         db_pool = ConnectionPool(
             conninfo=DATABASE_URL,
@@ -63,6 +80,7 @@ async def lifespan(_: FastAPI):
         )
         db_pool.open(wait=True)
         reaper_task = asyncio.create_task(expired_lease_reaper())
+        snapshot_task = asyncio.create_task(queue_metrics_snapshotter())
     if FIREBASE_PROJECT_ID:
         jwks_client = PyJWKClient(FIREBASE_SECURE_TOKEN_JWKS_URL, cache_keys=True)
     try:
@@ -72,6 +90,10 @@ async def lifespan(_: FastAPI):
             reaper_task.cancel()
             with suppress(asyncio.CancelledError):
                 await reaper_task
+        if snapshot_task is not None:
+            snapshot_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await snapshot_task
         if db_pool is not None:
             db_pool.close()
             db_pool = None
@@ -978,11 +1000,50 @@ def read_gateway_analytics(
         (tenant_id,),
     ).fetchall()
 
+    queue_history = connection.execute(
+        """
+        SELECT date_trunc('hour',captured_at) AS hour,
+               max(pending_devices) AS peak_pending_devices,
+               round(avg(pending_devices)::numeric,1) AS average_pending_devices,
+               max(waiting_requests) AS peak_waiting_requests,
+               max(ready_gateways) AS peak_ready_gateways,
+               max(busy_gateways) AS peak_busy_gateways
+          FROM dm_tenant_queue_snapshots
+         WHERE tenant_id=%s AND captured_at >= now()-INTERVAL '30 days'
+         GROUP BY date_trunc('hour',captured_at)
+         ORDER BY hour
+        """,
+        (tenant_id,),
+    ).fetchall()
+
+    queue_peaks = connection.execute(
+        """
+        SELECT max(pending_devices) AS peak_pending_devices,
+               round(avg(pending_devices)::numeric,1) AS average_pending_devices,
+               max(waiting_requests) AS peak_waiting_requests
+          FROM dm_tenant_queue_snapshots
+         WHERE tenant_id=%s AND captured_at >= now()-INTERVAL '30 days'
+        """,
+        (tenant_id,),
+    ).fetchone()
+
     total_requests = int(metrics["total_requests"] or 0)
     cancelled_requests = int(metrics["cancelled_requests"] or 0)
     total_attempts = int(metrics["total_attempts"] or 0)
     completed = int(metrics["completed_devices"] or 0)
     failed = int(metrics["failed_devices"] or 0)
+    ready_gateways = int(metrics["ready_gateways"] or 0)
+    busy_gateways = int(connection.execute(
+        """
+        SELECT count(*) FROM dm_gateways g
+         JOIN dm_tenant_memberships m ON m.user_id=g.owner_user_id AND m.tenant_id=%s
+         WHERE g.health_state='READY' AND g.revoked_at IS NULL
+           AND g.heartbeat_at >= now()-INTERVAL '90 seconds'
+           AND EXISTS (SELECT 1 FROM dm_job_attempts a WHERE a.gateway_id=g.id
+                        AND a.state IN ('LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS'))
+        """,
+        (tenant_id,),
+    ).fetchone()["count"] or 0)
     return jsonable_encoder({
         "period_days": 30,
         "metrics": {
@@ -990,7 +1051,12 @@ def read_gateway_analytics(
             "request_cancellation_rate_percent": round(cancelled_requests * 100 / total_requests, 1) if total_requests else 0,
             "device_success_rate_percent": round(completed * 100 / (completed + failed), 1) if completed + failed else None,
             "attempt_timeout_rate_percent": round(int(metrics["timed_out_attempts"] or 0) * 100 / total_attempts, 1) if total_attempts else None,
+            "instantaneous_gateway_utilization_percent": round(busy_gateways * 100 / ready_gateways, 1) if ready_gateways else None,
+            "peak_pending_devices_30d": queue_peaks["peak_pending_devices"],
+            "average_pending_devices_30d": queue_peaks["average_pending_devices"],
+            "peak_waiting_requests_30d": queue_peaks["peak_waiting_requests"],
         },
         "daily_activity": daily,
-        "note": "Metrics are tenant-scoped. Queue depth is current; historical queue-depth sampling will be added with the operational monitoring worker.",
+        "queue_depth_history_30d": queue_history,
+        "note": "Metrics are tenant-scoped. Queue snapshots are sampled every minute while the controller is running; gaps can occur during controller downtime. Gateway utilization is an instantaneous busy/ready ratio, not a time-weighted uptime measure.",
     })
