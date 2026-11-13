@@ -435,24 +435,16 @@ def read_check_batch(
         raise HTTPException(status_code=404, detail="Batch not found")
     batch = connection.execute(
         """
-        SELECT b.id, b.created_at, b.updated_at,
+        SELECT b.id, b.created_at, b.updated_at, b.status,
+               b.assigned_gateway_id, b.cancellation_requested_at, b.cancelled_at,
                (SELECT count(*) FROM dm_check_jobs j WHERE j.batch_id=b.id) AS total_jobs,
                (SELECT count(*) FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='COMPLETED') AS completed_jobs,
                (SELECT count(*) FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='FAILED') AS failed_jobs,
-               CASE
-                 WHEN EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id
-                              AND j.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS'))
-                   THEN 'RUNNING'
-                 WHEN EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='FAILED')
-                   AND NOT EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='COMPLETED')
-                   THEN 'FAILED'
-                 WHEN EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='FAILED')
-                   THEN 'PARTIAL'
-                 WHEN EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id)
-                   AND NOT EXISTS (SELECT 1 FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state<>'COMPLETED')
-                   THEN 'COMPLETED'
-                 ELSE 'QUEUED'
-               END AS status
+               (SELECT count(*) FROM dm_check_jobs j WHERE j.batch_id=b.id AND j.state='CANCELLED') AS cancelled_jobs,
+               (SELECT count(*) FROM dm_check_jobs j WHERE j.batch_id=b.id
+                  AND j.state IN ('QUEUED','RETRY_PENDING')) AS waiting_jobs,
+               (SELECT count(*) FROM dm_check_jobs j WHERE j.batch_id=b.id
+                  AND j.state IN ('LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')) AS active_jobs
           FROM dm_check_batches b
          WHERE b.id=%s AND b.tenant_id=%s
         """,
