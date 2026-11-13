@@ -37,4 +37,4 @@ Status: isolated Kotlin reference scheduler; smoke-tested, not integrated into e
 - Preserve the 3030 correlation rule: one unresolved transaction per physical phone/SIM; ambiguous replies must never be attached to another device check.
 
 ## Next stage
-Implement durable controller storage and authenticated gateway registration/heartbeat APIs, then connect a separate gateway-phone proof of concept.
+The durable PostgreSQL schema, OpenAPI contract and reference FastAPI service are now documented in [Phase 3 Controller Foundation](DevMonitor-5.0-Phase-3-Controller-Foundation.md). Next, production-harden the service, complete cross-process/restart tests and configure the identity provider and hosting only after provider and cost approval.
