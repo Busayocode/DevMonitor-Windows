@@ -7,8 +7,8 @@ DECLARE
     user_a UUID; user_b UUID;
     tenant_a UUID; tenant_b UUID; tenant_c UUID; tenant_d UUID;
     gateway_personal UUID; gateway_pool UUID; gateway_f1 UUID; gateway_f2 UUID; gateway_f3 UUID;
-    batch_a UUID; batch_b UUID; batch_c UUID; batch_d UUID; batch_old UUID;
-    job_personal UUID; job_shared UUID; job_c UUID; job_d UUID; job_old UUID;
+    batch_a UUID; batch_b UUID; batch_c UUID; batch_d UUID; batch_old UUID; batch_a2 UUID; batch_b2 UUID;
+    job_personal UUID; job_shared UUID; job_c UUID; job_d UUID; job_old UUID; job_a1 UUID; job_a2 UUID; job_b1 UUID;
     claim_row RECORD; claim_f1 RECORD; claim_f2 RECORD; claim_f3 RECORD; claim_old RECORD;
     reaper_row RECORD;
     personal_attempt UUID; personal_token TEXT;
@@ -24,7 +24,7 @@ BEGIN
     INSERT INTO dm_tenants(display_name) VALUES ('Controller Fair Tenant D') RETURNING id INTO tenant_d;
 
     INSERT INTO dm_tenant_memberships(tenant_id,user_id,role) VALUES
-      (tenant_a,user_a,'OWNER'), (tenant_b,user_b,'OWNER'),
+      (tenant_a,user_a,'OWNER'), (tenant_a,user_b,'MEMBER'), (tenant_b,user_b,'OWNER'),
       (tenant_c,user_a,'OWNER'), (tenant_d,user_b,'OWNER');
 
     INSERT INTO dm_gateways(owner_user_id,display_name,credential_hash,health_state,accept_pool_jobs,
@@ -195,6 +195,32 @@ BEGIN
     IF (SELECT health_state FROM dm_gateways WHERE id=gateway_f3) <> 'READY' THEN
         RAISE EXCEPTION 'resolved gateway did not return to READY';
     END IF;
+    -- Fairness also applies to two requesters inside the same tenant/company.
+    INSERT INTO dm_tenant_device_access(tenant_id,canonical_device_id) VALUES
+      (tenant_a,'GLO-GD-USER-A-1'), (tenant_a,'GLO-GD-USER-A-2'),
+      (tenant_a,'GLO-GD-USER-B-1');
+    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
+    VALUES (tenant_a,user_a,'same-tenant-user-a','GATEWAY',2,digest('same-tenant-user-a','sha256'))
+    RETURNING id INTO batch_a2;
+    INSERT INTO dm_check_batches(tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
+    VALUES (tenant_a,user_b,'same-tenant-user-b','GATEWAY',1,digest('same-tenant-user-b','sha256'))
+    RETURNING id INTO batch_b2;
+    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,enqueued_at)
+    VALUES (batch_a2,tenant_a,user_a,'GLO-GD-USER-A-1','standard',now()-INTERVAL '3 minutes')
+    RETURNING id INTO job_a1;
+    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,enqueued_at)
+    VALUES (batch_a2,tenant_a,user_a,'GLO-GD-USER-A-2','standard',now()-INTERVAL '2 minutes')
+    RETURNING id INTO job_a2;
+    INSERT INTO dm_check_jobs(batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,enqueued_at)
+    VALUES (batch_b2,tenant_a,user_b,'GLO-GD-USER-B-1','standard',now()-INTERVAL '1 minute')
+    RETURNING id INTO job_b1;
+
+    SELECT * INTO claim_f1 FROM dm_claim_next_job(gateway_f1);
+    SELECT * INTO claim_f3 FROM dm_claim_next_job(gateway_f3);
+    IF claim_f1.job_id IS DISTINCT FROM job_a1 OR claim_f3.job_id IS DISTINCT FROM job_b1 THEN
+        RAISE EXCEPTION 'same-tenant requester round-robin fairness failed';
+    END IF;
+
 END;
 $test$;
 
