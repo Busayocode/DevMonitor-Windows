@@ -847,13 +847,13 @@ def _queue_snapshot(connection, batch_id: UUID, tenant_id: UUID, user_id: UUID) 
                    count(DISTINCT b.id) AS requests_ahead
               FROM dm_check_batches b
               JOIN dm_check_jobs j ON j.batch_id=b.id
-             WHERE b.tenant_id=%s AND b.id<>%s
+             WHERE b.id<>%s
                AND (b.created_at,b.id) < (%s,%s)
                AND b.assigned_gateway_id IS NULL
                AND b.cancellation_requested_at IS NULL
                AND j.state IN ('QUEUED','RETRY_PENDING','LEASED','SENDING','AWAITING_REPLY','AMBIGUOUS')
             """,
-            (tenant_id, batch_id, batch["created_at"], batch_id),
+            (batch_id, batch["created_at"], batch_id),
         ).fetchone()
         gateway = None
 
