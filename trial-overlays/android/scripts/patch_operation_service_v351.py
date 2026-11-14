@@ -147,6 +147,11 @@ s = once(s, '''    override fun onDestroy() {
         OperationServiceCallbacks.onPauseRequested = null
         OperationServiceCallbacks.onResumeRequested = null
         scope.cancel()''', "Activity cleanup")
+release_note_old = 'whatsNewHighlights = listOf("Manage SMS Checker devices more easily, with improvements to reports and overall reliability.")'
+release_note_new = 'whatsNewHighlights = listOf("Track active checks and data operations from Android notifications, with pause and stop controls for SMS Checker.")'
+if s.count(release_note_old) != 2:
+    raise SystemExit("Expected both existing What's New entry points before updating v351 release notes.")
+s = s.replace(release_note_old, release_note_new)
 main.write_text(s, encoding="utf-8")
 
 # Only the explicit Sync now action starts this service; periodic screen-scoped sync stays unchanged.
