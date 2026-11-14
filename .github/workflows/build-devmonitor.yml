@@ -427,8 +427,8 @@ jobs:
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
           if not re.search(r'versionCode\s*=\s*351', gradle):
               raise SystemExit("Android build must declare versionCode 351 after preserving the v350 baseline.")
-          if source.count('whatsNewHighlights = listOf("Manage SMS Checker devices more easily, with improvements to reports and overall reliability.")') != 2:
-              raise SystemExit("Concise user-facing What's New message is missing from both update entry points.")
+          if source.count('whatsNewHighlights = listOf("Track active checks and data operations from Android notifications, with pause and stop controls for SMS Checker.")') != 2:
+              raise SystemExit("v351 operation-notification What's New message is missing from both update entry points.")
           if "allDailySnapshots" not in history or "SmsHistoryTableCell" not in history:
               raise SystemExit("SMS History is not routed to the report-style daily table.")
           if "DELETE FROM sms_checker_daily_results" not in store or "allDailySnapshots" not in store or "idx_sms_history_one_daily_result" not in store:
