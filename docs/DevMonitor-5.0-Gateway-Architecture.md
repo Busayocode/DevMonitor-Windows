@@ -454,3 +454,52 @@ Personal jobs reserved for a healthy paired gateway do not block unrelated users
 9. When a personal gateway is unavailable, an eligible pool gateway can take the job without weakening attempt/lease correlation.
 10. No account can register or select another account's gateway as its personal gateway.
 
+## 17. Android gateway availability, foreground operation and battery policy
+
+A dedicated Gateway Phone is a worker in the shared service, not an ordinary client that can be expected to run continuously without an explicit operator choice. The owner must be able to enable or disable gateway participation and see whether the phone is currently eligible to receive work.
+
+### 17.1 Operation visibility and foreground execution
+
+When the operator enables an always-available gateway worker and the app is actively maintaining its gateway connection or processing an assigned SMS job, use an Android foreground service with a persistent, user-visible notification. The notification should identify DevMonitor Gateway, show its state (for example, Connecting, Available, Processing a job, Paused or Reconnecting), and provide appropriate actions such as Open, Pause/Resume and Stop gateway. Do not show a permanent "working" notification when the owner has disabled the gateway or the service is idle and stopped.
+
+The service must:
+- Own the long-running connection/claim loop and active job lifecycle rather than relying on an Activity, screen timer or UI coroutine.
+- Keep one unresolved 3030 SMS transaction per physical gateway unless correlation testing explicitly approves safe concurrency.
+- Persist the active job ID, lease/attempt identity, send state, deadlines and result acknowledgement before/after critical transitions.
+- Use bounded network timeouts, backoff and heartbeat intervals; do not poll continuously while offline or paused.
+- Stop claiming new work immediately when the owner pauses or disables the gateway. An already-sent SMS must be resolved or marked uncertain safely; do not silently discard it.
+- Report availability to the controller only while the worker is genuinely able to accept work. A foreground notification is not itself proof of controller connectivity.
+- Recover after process death, network loss and reboot without duplicating an SMS that may already have been sent. If Android prevents automatic restart, show a clear Offline/Needs attention state and resume after an allowed user action.
+
+### 17.2 Battery optimisation and user-controlled exemption
+
+Doze and App Standby can defer background network activity and alarms. A dedicated phone expected to accept shared jobs while the screen is off may therefore need the operator to exempt the Gateway app from battery optimisation, depending on device manufacturer and Android release.
+
+Implementation requirements:
+- Detect and display the current battery-optimisation exemption state using Android's supported power-management APIs.
+- Explain why exemption matters only when the owner has enabled the phone as an available gateway worker.
+- Provide a user-initiated route to the relevant Android system settings. Where the app is eligible and its distribution policy permits it, the app may request the specific exemption through the system prompt; never silently change the setting or repeatedly prompt.
+- Treat the exemption as optional setup guidance, not as a substitute for a foreground service, durable job state, heartbeat/lease design or recovery logic.
+- Do not request exemption from ordinary DevMonitor Gateway client installations that do not serve jobs.
+- Before using the direct ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS request, verify current Google Play policy eligibility and the actual distribution channel. If the app is not eligible, direct the operator to the general battery-optimisation settings page and explain the OEM-specific steps instead.
+- Show a warning when optimisation remains enabled, but do not falsely label the phone unavailable if it can still operate under the current policy.
+
+### 17.3 Foreground-service type and Android-version compliance
+
+Do not select a foreground-service type by guesswork. Audit the final merged manifest, target SDK and every operation the service performs. Use only the Android foreground-service type(s) that accurately describe the work and satisfy the permissions and runtime prerequisites for the targeted Android releases. Android 14+ requires declared types and corresponding permissions; newer Android releases add further type-specific limits and boot-start restrictions. In particular, do not treat the time-limited `dataSync` type as a blanket always-on gateway mechanism. Evaluate whether a documented `specialUse` subtype is genuinely applicable and acceptable for the intended distribution channel before adopting it. Record the rationale and test the release APK's merged manifest.
+
+The service must comply with background-start restrictions. A boot receiver or scheduled worker may perform only work Android currently permits; do not assume it can always launch an unrestricted foreground service after reboot. If automatic recovery is blocked, surface the condition and guide the operator to reopen/enable the gateway.
+
+### 17.4 Availability and acceptance tests
+
+Test on the actual Android versions and manufacturers intended for deployment:
+1. Screen off and device idle for an extended period.
+2. Battery optimisation enabled and disabled.
+3. Wi-Fi to mobile-data transition and temporary loss of all internet.
+4. App process killed by the system, app swipe-away, device reboot and explicit force-stop (force-stop requires user intervention before normal recovery).
+5. Gateway pause/stop while idle and while an SMS transaction is in flight.
+6. Expired controller lease, late 3030 reply, duplicate broadcast and reconnect after uncertain send.
+7. Notification permission denied, notification channel disabled and foreground-service start denied.
+8. Battery drain, data use and controller heartbeat accuracy during a long soak test.
+
+Success means the gateway remains visibly and honestly available under supported conditions, recovers safely when permitted, and never claims uninterrupted operation that Android cannot guarantee. Battery exemption improves the chance of timely background availability; it is not a guarantee against force-stop, OEM task killers, loss of connectivity, revoked permissions or OS policy changes.
