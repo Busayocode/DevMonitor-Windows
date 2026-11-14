@@ -198,6 +198,32 @@ BEGIN
         gateway_b,user_a,'Test operator confirmed Gateway B inbox cleared and safe.');
     IF NOT accepted THEN RAISE EXCEPTION 'operator could not release Gateway B quarantine'; END IF;
 
+    -- A Gateway that has recovered and completed operator quarantine release
+    -- must be able to heartbeat back to READY and accept fresh owner-directed work.
+    IF dm_record_gateway_heartbeat(gateway_b,'test-restarted',TRUE,TRUE,TRUE,NULL) <> 'READY' THEN
+        RAISE EXCEPTION 'recovered Gateway B did not return to READY after a healthy heartbeat';
+    END IF;
+    INSERT INTO dm_tenant_device_access(tenant_id,canonical_device_id)
+    VALUES (tenant_a,'GATEWAY-RESTART-RECOVERY');
+    INSERT INTO dm_check_batches(
+        tenant_id,requested_by_user_id,client_idempotency_key,
+        app_edition,total_jobs,request_fingerprint
+    ) VALUES (
+        tenant_a,user_b,'gateway-restart-recovery','GATEWAY',1,
+        digest('gateway-restart-recovery','sha256')
+    ) RETURNING id INTO batch_id;
+    INSERT INTO dm_check_jobs(
+        batch_id,tenant_id,requested_by_user_id,canonical_device_id,
+        query_profile,preferred_gateway_id
+    ) VALUES (
+        batch_id,tenant_a,user_b,'GATEWAY-RESTART-RECOVERY','standard',gateway_b
+    );
+    PERFORM dm_rebalance_unstarted_batches();
+    SELECT * INTO retry_claim FROM dm_claim_next_job(gateway_b);
+    IF retry_claim.job_id IS NULL THEN
+        RAISE EXCEPTION 'recovered Gateway B could not claim a fresh request';
+    END IF;
+
     -- Cancel the first request (one result already completed) and the other
     -- untouched queued requests after validating the redistribution behaviour.
     PERFORM dm_cancel_check_batch(batch_ids[1],tenant_a,user_a,'cleanup after queue test');
