@@ -127,22 +127,12 @@ if [[ -z "$job_a" || -z "$job_b" || "$job_a" == "$job_b" ]]; then
   exit 1
 fi
 
-psql -X -v ON_ERROR_STOP=1 -v job_a="$job_a" -v job_b="$job_b" <<'SQL'
-DO $assert$
-BEGIN
-  IF (SELECT count(*) FROM dm_job_attempts
-       WHERE job_id IN (:'job_a'::uuid, :'job_b'::uuid)
-         AND state='LEASED') <> 2 THEN
-    RAISE EXCEPTION 'independent gateways did not create exactly two active leases';
-  END IF;
-  IF (SELECT count(DISTINCT gateway_id) FROM dm_job_attempts
-       WHERE job_id IN (:'job_a'::uuid, :'job_b'::uuid)
-         AND state='LEASED') <> 2 THEN
-    RAISE EXCEPTION 'parallel claims were not owned by two distinct gateways';
-  END IF;
-END;
-$assert$;
-SQL
+active_parallel="$(psql -X -qAt -c "SELECT count(*) FROM dm_job_attempts WHERE job_id IN ('$job_a'::uuid,'$job_b'::uuid) AND state='LEASED'")"
+distinct_parallel_gateways="$(psql -X -qAt -c "SELECT count(DISTINCT gateway_id) FROM dm_job_attempts WHERE job_id IN ('$job_a'::uuid,'$job_b'::uuid) AND state='LEASED'")"
+if [[ "$active_parallel" != "2" || "$distinct_parallel_gateways" != "2" ]]; then
+  echo "Expected two active leases owned by two different gateways; got leases=$active_parallel gateways=$distinct_parallel_gateways."
+  exit 1
+fi
 
 # Hold the same gateway row briefly so both claim sessions queue behind its
 # row lock. Once released, one call must win; the other must see the active
