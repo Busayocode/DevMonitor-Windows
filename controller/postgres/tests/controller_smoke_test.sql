@@ -332,4 +332,106 @@ BEGIN
 END;
 $test$;
 
+
+
+-- Dynamic population regression: the scheduler must not depend on a fixed
+-- number of users. Exercise 1, 2, 5 and 9 independent users against the same
+-- three-worker shared pool. Each user submits one request in each scenario.
+DO $dynamic_users$
+DECLARE
+    tenant_id UUID;
+    gateway_ids UUID[] := ARRAY[]::UUID[];
+    user_ids UUID[] := ARRAY[]::UUID[];
+    batch_ids UUID[] := ARRAY[]::UUID[];
+    gateway_id UUID;
+    user_id UUID;
+    batch_id UUID;
+    scenario_size INTEGER;
+    user_no INTEGER;
+    gateway_no INTEGER;
+    assigned_count INTEGER;
+    min_load BIGINT;
+    max_load BIGINT;
+BEGIN
+    INSERT INTO dm_tenants(display_name)
+    VALUES ('Dynamic User Population Regression')
+    RETURNING id INTO tenant_id;
+
+    -- Three eligible shared gateways, owned by three distinct users.
+    FOR gateway_no IN 1..3 LOOP
+        INSERT INTO dm_users(auth_subject)
+        VALUES ('dynamic-queue-gateway-owner-'||gateway_no)
+        RETURNING id INTO user_id;
+        user_ids := array_append(user_ids,user_id);
+        INSERT INTO dm_tenant_memberships(tenant_id,user_id,role)
+        VALUES (tenant_id,user_id,'OWNER');
+        INSERT INTO dm_gateways(
+            owner_user_id,display_name,credential_hash,health_state,accept_pool_jobs,
+            sms_permission_ready,telephony_ready,network_ready,heartbeat_at
+        ) VALUES (
+            user_id,'Dynamic Pool Gateway '||gateway_no,
+            digest(gen_random_bytes(32),'sha256'),'READY',TRUE,TRUE,TRUE,TRUE,now()
+        ) RETURNING id INTO gateway_id;
+        gateway_ids := array_append(gateway_ids,gateway_id);
+    END LOOP;
+
+    -- User population is deliberately variable, not a system limit or a
+    -- hard-coded five-user assumption.
+    FOREACH scenario_size IN ARRAY ARRAY[1,2,5,9] LOOP
+        FOR user_no IN 1..scenario_size LOOP
+            INSERT INTO dm_users(auth_subject)
+            VALUES ('dynamic-queue-user-'||scenario_size||'-'||user_no)
+            RETURNING id INTO user_id;
+            INSERT INTO dm_tenant_memberships(tenant_id,user_id,role)
+            VALUES (tenant_id,user_id,'MEMBER');
+            INSERT INTO dm_check_batches(
+                tenant_id,requested_by_user_id,client_idempotency_key,
+                app_edition,total_jobs,request_fingerprint,created_at
+            ) VALUES (
+                tenant_id,user_id,
+                'dynamic-users-'||scenario_size||'-'||user_no,
+                'GATEWAY',1,
+                digest('dynamic-users-'||scenario_size||'-'||user_no,'sha256'),
+                now()+make_interval(secs=>scenario_size*100+user_no)
+            ) RETURNING id INTO batch_id;
+            batch_ids := array_append(batch_ids,batch_id);
+            INSERT INTO dm_tenant_device_access(tenant_id,canonical_device_id)
+            VALUES (tenant_id,'DYNAMIC-'||scenario_size||'-'||user_no);
+            INSERT INTO dm_check_jobs(
+                batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile
+            ) VALUES (
+                batch_id,tenant_id,user_id,
+                'DYNAMIC-'||scenario_size||'-'||user_no,'standard'
+            );
+        END LOOP;
+
+        PERFORM dm_rebalance_unstarted_batches();
+
+        SELECT count(*) INTO assigned_count
+          FROM dm_check_batches
+         WHERE id=ANY(batch_ids) AND assigned_gateway_id=ANY(gateway_ids);
+        IF assigned_count <> cardinality(batch_ids) THEN
+            RAISE EXCEPTION
+                'not every independent user request was assigned for population scenario %',
+                scenario_size;
+        END IF;
+
+        SELECT min(load_count),max(load_count)
+          INTO min_load,max_load
+          FROM (
+              SELECT g.id,count(b.id) AS load_count
+                FROM unnest(gateway_ids) AS g(id)
+                LEFT JOIN dm_check_batches b
+                  ON b.assigned_gateway_id=g.id AND b.id=ANY(batch_ids)
+               GROUP BY g.id
+          ) loads;
+        IF max_load-min_load > 1 THEN
+            RAISE EXCEPTION
+                'three-gateway distribution became unbalanced at population scenario %: min %, max %',
+                scenario_size,min_load,max_load;
+        END IF;
+    END LOOP;
+END;
+$dynamic_users$;
+
 ROLLBACK;
