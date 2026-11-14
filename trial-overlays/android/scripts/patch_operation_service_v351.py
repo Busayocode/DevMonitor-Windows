@@ -125,19 +125,28 @@ for old, new, label in (
     s = s.replace(old, new)
 
 # Drive backup and restore operations stop their notification even when transfer fails.
-backup = "GoogleDriveBackup.backup(driveAccessToken, database.databaseFile())"
-restore = "GoogleDriveBackup.restore(driveAccessToken, temp)"
+backup = "GoogleDriveBackup.backup(driveAccessToken, database.databaseFile(), cloudProgressCallback)"
+restore = "GoogleDriveBackup.restore(driveAccessToken, temp, cloudProgressCallback)"
 if s.count(backup) != 2 or s.count(restore) != 2:
-    raise SystemExit("Expected two existing Drive backup and restore call sites.")
+    raise SystemExit(
+        "Expected two progress-enabled Drive backup and restore call sites "
+               f"(found backup={s.count(backup)}, restore={s.count(restore)})."
+    )
 s = s.replace(backup, '''run {
-                                    OperationForegroundService.start(this@MainActivity, "Google Drive backup", "Uploading database backup…")
-                                    try { GoogleDriveBackup.backup(driveAccessToken, database.databaseFile()) }
-                                    finally { OperationForegroundService.stop(this@MainActivity) }
+                                    OperationForegroundService.start(this@MainActivity, "Google Drive backup", "Preparing database backup…")
+                                    try {
+                                        GoogleDriveBackup.backup(driveAccessToken, database.databaseFile(), cloudProgressCallback) { phase, fraction ->
+                                            OperationForegroundService.update(this@MainActivity, "Google Drive backup", phase, (fraction * 100).toInt(), 100)
+                                        }
+                                    } finally { OperationForegroundService.stop(this@MainActivity) }
                                 }''')
 s = s.replace(restore, '''run {
-                                    OperationForegroundService.start(this@MainActivity, "Google Drive restore", "Downloading database backup…")
-                                    try { GoogleDriveBackup.restore(driveAccessToken, temp) }
-                                    finally { OperationForegroundService.stop(this@MainActivity) }
+                                    OperationForegroundService.start(this@MainActivity, "Google Drive restore", "Finding database backup…")
+                                    try {
+                                        GoogleDriveBackup.restore(driveAccessToken, temp, cloudProgressCallback) { phase, fraction ->
+                                            OperationForegroundService.update(this@MainActivity, "Google Drive restore", phase, (fraction * 100).toInt(), 100)
+                                        }
+                                    } finally { OperationForegroundService.stop(this@MainActivity) }
                                 }''')
 s = once(s, '''    override fun onDestroy() {
         scope.cancel()''',
