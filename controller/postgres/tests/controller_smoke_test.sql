@@ -438,8 +438,14 @@ BEGIN
          WHERE id=ANY(batch_ids) AND assigned_gateway_id=ANY(gateway_ids);
         IF assigned_count <> cardinality(batch_ids) THEN
             RAISE EXCEPTION
-                'not every independent user request was assigned for population scenario %',
-                scenario_size;
+                'dynamic population assignment mismatch: scenario %, expected %, assigned %, batch assignments %, gateway health %',
+                scenario_size,
+                cardinality(batch_ids),
+                assigned_count,
+                (SELECT string_agg(b.id::text||'='||COALESCE(b.assigned_gateway_id::text,'NULL'), ', ' ORDER BY b.created_at,b.id)
+                   FROM dm_check_batches b WHERE b.id=ANY(batch_ids)),
+                (SELECT string_agg(g.id::text||'='||g.health_state||'/pool='||g.accept_pool_jobs::text, ', ')
+                   FROM dm_gateways g WHERE g.id=ANY(gateway_ids));
         END IF;
 
         SELECT min(load_count),max(load_count)
