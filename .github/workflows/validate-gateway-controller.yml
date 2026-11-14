@@ -128,3 +128,6 @@ jobs:
 
       - name: Run controller integration smoke tests
         run: psql -v ON_ERROR_STOP=1 -f controller/postgres/tests/controller_smoke_test.sql
+
+      - name: Run concurrent PostgreSQL gateway claim tests
+        run: bash controller/postgres/tests/controller_concurrency_test.sh
