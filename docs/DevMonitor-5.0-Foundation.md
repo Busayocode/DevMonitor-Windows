@@ -96,3 +96,13 @@ DevMonitor 5.0 should:
 3. Allow SMS Checker capacity to grow by adding gateway phones rather than requiring every user's phone to perform SMS operations.
 
 **Guiding principle:** One DevMonitor ecosystem, two user-selected installation editions, and scalable SMS infrastructure.
+
+## 8. Dedicated gateway phone availability
+
+A phone that contributes SMS capacity to the shared Gateway pool must be explicitly enabled by its owner and must expose its operating state. While the gateway worker is available or processing an assigned request, the Android app will use a compliant foreground service and an ongoing notification with clear status and Pause/Resume/Stop controls. It must persist job/attempt state and recover safely after permitted interruptions.
+
+For dedicated gateway phones, the app will check Android battery-optimisation status and explain the effect of Doze/standby. Where legally and distribution-policy eligible, the operator may be guided through the system exemption prompt; otherwise the app will open the general system settings and provide manufacturer-specific instructions. This is a user-controlled setup step, not a hidden permission or a guarantee of uninterrupted execution.
+
+Ordinary Gateway Edition clients do not need battery-optimisation exemption. They submit requests and receive results; they are not expected to remain continuously active as workers.
+
+Foreground-service type selection, Android 14+ permissions, newer Android boot/start restrictions and distribution-policy eligibility must be verified against the final merged manifest and release target before implementation is considered complete. A force-stopped app, revoked permission, OEM task killer or lost network may still interrupt a gateway; durable leases, idempotency and recovery remain mandatory.
