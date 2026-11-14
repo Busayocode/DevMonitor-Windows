@@ -5,11 +5,11 @@ build_file = Path("app/build.gradle.kts")
 if not build_file.is_file():
     raise SystemExit("Android app/build.gradle.kts not found.")
 source = build_file.read_text(encoding="utf-8")
-pattern = r'(?m)^(\\s*versionCode\\s*=\\s*)349(\\s*)$'
+pattern = r'(?m)^(\s*versionCode\s*=\s*)349(\s*)$'
 if len(list(re.finditer(pattern, source))) != 1:
     raise SystemExit("Expected exactly one versionCode 349 before advancing to 350.")
-source = re.sub(pattern, r'\\g<1>350\\g<2>', source, count=1)
-match = re.search(r'(?m)^(\\s*versionName\\s*=\\s*)\"([^\"]+)\"', source)
+source = re.sub(pattern, r'\g<1>350\g<2>', source, count=1)
+match = re.search(r'(?m)^(\s*versionName\s*=\s*)"([^"]+)"', source)
 if not match:
     raise SystemExit("versionName declaration not found.")
 name = match.group(2)
