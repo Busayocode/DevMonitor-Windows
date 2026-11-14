@@ -33,9 +33,9 @@ class OperationForegroundService : Service() {
         private const val CHANNEL = "devmonitor_active_operation"
         private const val ID = 3510
         private const val UPDATE = "com.aziitech.simregmonitor.operation.UPDATE"
-        private const val STOP = "com.aziitech.simregmonitor.operation.STOP"
-        private const val PAUSE = "com.aziitech.simregmonitor.operation.PAUSE"
-        private const val RESUME = "com.aziitech.simregmonitor.operation.RESUME"
+        private const val ACTION_STOP = "com.aziitech.simregmonitor.operation.STOP"
+        private const val ACTION_PAUSE = "com.aziitech.simregmonitor.operation.PAUSE"
+        private const val ACTION_RESUME = "com.aziitech.simregmonitor.operation.RESUME"
         private const val T = "title"; private const val D = "detail"
         private const val P = "progress"; private const val M = "maximum"
         private const val C = "controls"; private const val Q = "paused"; private const val R = "pauseRequested"
@@ -58,9 +58,9 @@ class OperationForegroundService : Service() {
 
     override fun onStartCommand(i: Intent?, flags: Int, startId: Int): Int {
         when (i?.action) {
-            STOP -> { OperationServiceCallbacks.onStopRequested?.invoke(); stopSelf(); return START_NOT_STICKY }
-            PAUSE -> { pauseRequested = true; OperationServiceCallbacks.onPauseRequested?.invoke(); detail = "Pause requested — finishing current device…" }
-            RESUME -> { pauseRequested = false; paused = false; OperationServiceCallbacks.onResumeRequested?.invoke(); detail = "Resuming…" }
+            ACTION_STOP -> { OperationServiceCallbacks.onStopRequested?.invoke(); stopSelf(); return START_NOT_STICKY }
+            ACTION_PAUSE -> { pauseRequested = true; OperationServiceCallbacks.onPauseRequested?.invoke(); detail = "Pause requested — finishing current device…" }
+            ACTION_RESUME -> { pauseRequested = false; paused = false; OperationServiceCallbacks.onResumeRequested?.invoke(); detail = "Resuming…" }
             else -> {
                 title = i?.getStringExtra(T) ?: title; detail = i?.getStringExtra(D) ?: detail
                 progress = i?.getIntExtra(P, progress) ?: progress; maximum = i?.getIntExtra(M, maximum) ?: maximum
@@ -86,8 +86,8 @@ class OperationForegroundService : Service() {
             fun action(request: String, requestCode: Int) = PendingIntent.getService(this, requestCode,
                 Intent(this, OperationForegroundService::class.java).setAction(request),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            b.addAction(0, if (paused || pauseRequested) "Resume" else "Pause after current", action(if (paused || pauseRequested) RESUME else PAUSE, 3513))
-            b.addAction(0, "Stop", action(STOP, 3512))
+            b.addAction(0, if (paused || pauseRequested) "Resume" else "Pause after current", action(if (paused || pauseRequested) ACTION_RESUME else ACTION_PAUSE, 3513))
+            b.addAction(0, "Stop", action(ACTION_STOP, 3512))
         }
         val n = b.build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceCompat.startForeground(this, ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
