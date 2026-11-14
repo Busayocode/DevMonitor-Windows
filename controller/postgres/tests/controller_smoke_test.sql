@@ -401,9 +401,17 @@ BEGIN
         gateway_ids := array_append(gateway_ids,gateway_id);
     END LOOP;
 
+    -- Keep the pool isolated from the two shared gateways created by the
+    -- preceding smoke-test block. The scheduler is global, not tenant-scoped.
+    UPDATE dm_gateways
+       SET accept_pool_jobs=FALSE
+     WHERE display_name IN ('Queue Gateway A','Queue Gateway B');
+
     -- User population is deliberately variable, not a system limit or a
-    -- hard-coded five-user assumption.
+    -- hard-coded five-user assumption. Each scenario is isolated so earlier
+    -- unstarted batches cannot affect the next population's pool distribution.
     FOREACH scenario_size IN ARRAY ARRAY[1,2,5,9] LOOP
+        batch_ids := ARRAY[]::UUID[];
         FOR user_no IN 1..scenario_size LOOP
             INSERT INTO dm_users(auth_subject)
             VALUES ('dynamic-queue-user-'||scenario_size||'-'||user_no)
@@ -462,6 +470,15 @@ BEGIN
                 'three-gateway distribution became unbalanced at population scenario %: min %, max %',
                 scenario_size,min_load,max_load;
         END IF;
+
+        -- Remove this scenario's pending work before exercising the next size.
+        FOR batch_id IN SELECT id FROM dm_check_batches WHERE id=ANY(batch_ids) LOOP
+            PERFORM dm_cancel_check_batch(
+                batch_id,tenant_id,
+                (SELECT requested_by_user_id FROM dm_check_batches WHERE id=batch_id),
+                'cleanup after dynamic population scenario'
+            );
+        END LOOP;
     END LOOP;
 END;
 $dynamic_users$;
