@@ -31,12 +31,12 @@ BEGIN
     INSERT INTO dm_tenants(display_name) VALUES ('Cache History Separate Tenant')
     RETURNING id INTO v_outsider_tenant_id;
 
-    INSERT INTO dm_tenant_memberships(v_tenant_id,user_id,role) VALUES
+    INSERT INTO dm_tenant_memberships(tenant_id,user_id,role) VALUES
       (v_tenant_id,owner_id,'OWNER'),
       (v_tenant_id,member_id,'MEMBER'),
       (v_outsider_tenant_id,outsider_id,'OWNER');
 
-    INSERT INTO dm_tenant_device_access(v_tenant_id,canonical_device_id)
+    INSERT INTO dm_tenant_device_access(tenant_id,canonical_device_id)
     VALUES (v_tenant_id,'CACHE-HISTORY-SHARED-DEVICE');
 
     INSERT INTO dm_gateways(
@@ -48,7 +48,7 @@ BEGIN
     ) RETURNING id INTO gateway_id;
 
     INSERT INTO dm_check_batches(
-      v_tenant_id,requested_by_user_id,client_idempotency_key,app_edition,
+      tenant_id,requested_by_user_id,client_idempotency_key,app_edition,
       total_jobs,request_fingerprint
     ) VALUES (
       v_tenant_id,owner_id,'cache-history-fixture','GATEWAY',3,
@@ -59,7 +59,7 @@ BEGIN
     -- the same tenant, even when the second member never requested this device.
     FOR day_offset IN 0..2 LOOP
       INSERT INTO dm_check_jobs(
-        batch_id,v_tenant_id,requested_by_user_id,canonical_device_id,query_profile,state
+        batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,state
       ) VALUES (
         batch_id,v_tenant_id,owner_id,'CACHE-HISTORY-SHARED-DEVICE','standard','COMPLETED'
       ) RETURNING id INTO job_id;
@@ -73,7 +73,7 @@ BEGIN
       );
 
       INSERT INTO dm_daily_sms_results(
-        v_tenant_id,canonical_device_id,business_date,checked_at,received_at,
+        tenant_id,canonical_device_id,business_date,checked_at,received_at,
         values_json,gateway_id,job_id,attempt_id,parser_version
       ) VALUES (
         v_tenant_id,'CACHE-HISTORY-SHARED-DEVICE',CURRENT_DATE-day_offset,
@@ -84,8 +84,8 @@ BEGIN
     END LOOP;
 
     SELECT count(*) INTO shared_rows
-      FROM dm_daily_sms_results
-     WHERE v_tenant_id=v_tenant_id
+      FROM dm_daily_sms_results r
+     WHERE r.tenant_id=v_tenant_id
        AND canonical_device_id='CACHE-HISTORY-SHARED-DEVICE'
        AND business_date BETWEEN CURRENT_DATE-INTERVAL '61 days' AND CURRENT_DATE;
     IF shared_rows <> 3 THEN
@@ -93,8 +93,8 @@ BEGIN
     END IF;
 
     SELECT values_json->>'todayCount' INTO newest_value
-      FROM dm_daily_sms_results
-     WHERE v_tenant_id=v_tenant_id
+      FROM dm_daily_sms_results r
+     WHERE r.tenant_id=v_tenant_id
        AND canonical_device_id='CACHE-HISTORY-SHARED-DEVICE'
      ORDER BY checked_at DESC LIMIT 1;
     IF newest_value <> '100' THEN
@@ -102,22 +102,22 @@ BEGIN
     END IF;
 
     SELECT count(*) INTO outsider_rows
-      FROM dm_daily_sms_results
-     WHERE v_tenant_id=v_outsider_tenant_id
+      FROM dm_daily_sms_results r
+     WHERE r.tenant_id=v_outsider_tenant_id
        AND canonical_device_id='CACHE-HISTORY-SHARED-DEVICE';
     IF outsider_rows <> 0 THEN
       RAISE EXCEPTION 'another tenant unexpectedly sees shared cache rows';
     END IF;
 
     IF NOT EXISTS (
-      SELECT 1 FROM dm_tenant_memberships
-       WHERE v_tenant_id=v_tenant_id AND user_id=member_id
+      SELECT 1 FROM dm_tenant_memberships m
+       WHERE m.tenant_id=v_tenant_id AND m.user_id=member_id
     ) THEN
       RAISE EXCEPTION 'second authorised member is not in shared tenant';
     END IF;
     IF EXISTS (
-      SELECT 1 FROM dm_tenant_memberships
-       WHERE v_tenant_id=v_tenant_id AND user_id=outsider_id
+      SELECT 1 FROM dm_tenant_memberships m
+       WHERE m.tenant_id=v_tenant_id AND m.user_id=outsider_id
     ) THEN
       RAISE EXCEPTION 'outside user unexpectedly belongs to shared tenant';
     END IF;
