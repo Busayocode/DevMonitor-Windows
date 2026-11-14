@@ -135,7 +135,8 @@ if s.count(backup) != 2 or s.count(restore) != 2:
 s = s.replace(backup, '''run {
                                     OperationForegroundService.start(this@MainActivity, "Google Drive backup", "Preparing database backup…")
                                     try {
-                                        GoogleDriveBackup.backup(driveAccessToken, database.databaseFile(), cloudProgressCallback) { phase, fraction ->
+                                        GoogleDriveBackup.backup(driveAccessToken, database.databaseFile()) { phase, fraction ->
+                                            cloudProgressCallback(phase, fraction)
                                             OperationForegroundService.update(this@MainActivity, "Google Drive backup", phase, (fraction * 100).toInt(), 100)
                                         }
                                     } finally { OperationForegroundService.stop(this@MainActivity) }
@@ -143,7 +144,8 @@ s = s.replace(backup, '''run {
 s = s.replace(restore, '''run {
                                     OperationForegroundService.start(this@MainActivity, "Google Drive restore", "Finding database backup…")
                                     try {
-                                        GoogleDriveBackup.restore(driveAccessToken, temp, cloudProgressCallback) { phase, fraction ->
+                                        GoogleDriveBackup.restore(driveAccessToken, temp) { phase, fraction ->
+                                            cloudProgressCallback(phase, fraction)
                                             OperationForegroundService.update(this@MainActivity, "Google Drive restore", phase, (fraction * 100).toInt(), 100)
                                         }
                                     } finally { OperationForegroundService.stop(this@MainActivity) }
