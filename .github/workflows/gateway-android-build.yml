@@ -9,6 +9,7 @@ on:
       - "docs/**"
       - "DEV_MONITOR_5.0_MASTER_SHEET.md"
       - "gateway-auth-android/**"
+      - "gateway-worker-core/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle.properties"
@@ -101,6 +102,7 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon \
             :gateway-auth-android:testDebugUnitTest \
+            :gateway-worker-core:test \
             :gateway-auth-android:assembleDebug \
             :gateway-app:assembleDebug
 
