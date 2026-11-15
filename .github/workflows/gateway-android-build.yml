@@ -34,7 +34,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: gateway-5-android-${{ github.ref }}
@@ -114,3 +114,13 @@ jobs:
           path: gateway-app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish directly downloadable Gateway APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: gateway-5.0-latest
+          name: DevMonitor Gateway 5.0 — Latest build
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: gateway-app/build/outputs/apk/debug/*.apk
