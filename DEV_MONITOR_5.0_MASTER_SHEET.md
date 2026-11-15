@@ -131,8 +131,9 @@ It does **not** prove live Google/Firebase sign-in, a successful request to a de
 ## 7. Immediate next sequence
 
 1. Verify real Google/Firebase sign-in on the current Gateway APK.
-2. Complete controller integration/security tests on an isolated test database; no paid deployment yet.
-3. Worker-core CI passed (run #43682711793). The Android branch now contains SQLite persistence for the SMS channel snapshot plus controller job/lease and attempt lifecycle records. Validate the integrated Android build, then wire the ledger to controller claim and worker state transitions before selecting the compliant foreground-service type.
+2. Build and inspect the new registration UI/identity integration, then complete a live registration round-trip only after an approved HTTPS controller endpoint is configured.
+3. Complete controller integration/security tests on an isolated test database; no paid deployment yet.
+4. Worker-core CI passed (run #43682711793). The Android branch now contains SQLite persistence for the SMS channel snapshot plus controller job/lease and attempt lifecycle records. Validate the integrated Android build, then wire the ledger to controller claim and worker state transitions before selecting the compliant foreground-service type.
 4. Connect one worker to a test controller and run one controlled 3030 transaction with ambiguity protection.
 5. Add a second worker and validate queue assignment, isolation and recovery.
 6. Integrate the Gateway transport into the separate Gateway edition and run permission/regression checks.
@@ -146,6 +147,22 @@ It does **not** prove live Google/Firebase sign-in, a successful request to a de
 - Result: **success**. The build job ran `:gateway-auth-android:testDebugUnitTest`, `:gateway-worker-core:test`, `:gateway-auth-android:assembleDebug`, and `:gateway-app:assembleDebug`; the source ZIP packaging job also succeeded.
 - Artifacts: `DevMonitor-Gateway-5.0-debug` (~4.33 MB) and `DevMonitor-Gateway-5.0-Source` (~82.6 KB). Both are temporary Actions artifacts, expiring 29 Nov 2026.
 - Scope: automated compile/unit-test/package validation only. No live-device SMS or controller test is implied.
+
+## 10. Gateway registration UI and encrypted identity integration — 15 Nov 2026
+
+- [x] Wire the existing controller registration call into the Android Gateway app's setup screen.
+- [x] Add an editable installation display name (defaults to the Android device model).
+- [x] Obtain a fresh Firebase ID token only for the client registration request; never display, log or persist it.
+- [x] Save the controller-issued opaque Gateway bearer credential and Gateway ID through the Android Keystore AES-256-GCM credential store.
+- [x] Load and display the registered Gateway ID after app restart without exposing the credential.
+- [x] Prevent a second registration from the same installation once a stored Gateway ID is available.
+- [x] Keep the Firebase user token and Gateway worker credential as separate authentication domains.
+- [ ] Run the updated Gateway Android build and inspect compiler/test results.
+- [ ] Configure an approved HTTPS controller endpoint and complete a real registration round-trip. The controller has not been deployed or configured in this app yet; no successful live registration is claimed.
+- [ ] Add a safe operator recovery/revocation path for an inaccessible or invalidated Android Keystore credential. Do not silently create a replacement Gateway identity.
+- [ ] Persist the controller URL and verify it belongs to the intended environment before enabling unattended worker operations.
+
+**Implementation boundary:** registration wiring is present in the app source, but it does not make the phone a running SMS worker. Heartbeats, worker foreground service, SMS permission/SIM checks, claim loop, SMS send/receive, and result submission remain separate unfinished work.
 
 ## 9. Gateway visual parity work
 
