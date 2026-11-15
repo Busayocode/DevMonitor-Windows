@@ -6,6 +6,7 @@ on:
       - devmonitor-5.0-gateway-android-download
     paths:
       - ".github/workflows/retrieve-main-ui-reference.yml"
+      - "docs/DevMonitor-5.0-Gateway-Visual-Parity.md"
 
 permissions:
   contents: read
