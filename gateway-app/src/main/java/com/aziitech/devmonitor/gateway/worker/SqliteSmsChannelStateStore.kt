@@ -8,6 +8,38 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
 
+enum class GatewayJobState { CLAIMED, RUNNING, SUCCEEDED, FAILED, CANCELLED, LEASE_EXPIRED }
+enum class GatewayAttemptState { RESERVED, SENDING, SENT, AWAITING_REPLY, SUCCEEDED, FAILED, TIMED_OUT, ABANDONED }
+
+data class GatewayJobRecord(
+    val jobId: String,
+    val tenantId: String,
+    val clientId: String,
+    val gatewayId: String,
+    val leaseId: String,
+    val leaseExpiresAt: String,
+    val payloadJson: String,
+    val state: GatewayJobState,
+    val updatedAt: String
+)
+
+data class GatewayAttemptRecord(
+    val attemptId: String,
+    val jobId: String,
+    val attemptNumber: Int,
+    val state: GatewayAttemptState,
+    val createdAt: String,
+    val updatedAt: String,
+    val transactionId: String? = null,
+    val sendStartedAt: String? = null,
+    val sentAt: String? = null,
+    val responseDeadline: String? = null,
+    val completedAt: String? = null,
+    val errorCode: String? = null,
+    val errorMessage: String? = null,
+    val resultJson: String? = null
+)
+
 /**
  * Durable Android adapter for the pure Kotlin worker-core state contract.
  *
@@ -47,6 +79,125 @@ class SqliteSmsChannelStateStore(context: Context) : SmsChannelStateStore {
             db.endTransaction()
         }
     }
+
+
+    /** Atomically stores a controller job claim and its first attempt. */
+    @Synchronized
+    fun saveClaim(job: GatewayJobRecord, attempt: GatewayAttemptRecord) {
+        require(job.jobId.isNotBlank() && job.leaseId.isNotBlank() && job.gatewayId.isNotBlank())
+        require(attempt.attemptId.isNotBlank() && attempt.jobId == job.jobId && attempt.attemptNumber > 0)
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            val prior = db.rawQuery(
+                "SELECT record_json FROM gateway_attempts WHERE attempt_id = ?",
+                arrayOf(attempt.attemptId)
+            ).use { cursor -> if (cursor.moveToFirst()) decodeAttempt(cursor.getString(0)) else null }
+            require(prior == null || prior.jobId == attempt.jobId) {
+                "Attempt ID is already associated with another job"
+            }
+            putRecord(db, "gateway_jobs", "job_id", job.jobId, null, encodeJob(job))
+            putRecord(db, "gateway_attempts", "attempt_id", attempt.attemptId, attempt.jobId, encodeAttempt(attempt))
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /** Atomically advances the durable job and attempt lifecycle together. */
+    @Synchronized
+    fun saveJobAndAttempt(job: GatewayJobRecord, attempt: GatewayAttemptRecord) {
+        require(job.jobId == attempt.jobId)
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            putRecord(db, "gateway_jobs", "job_id", job.jobId, null, encodeJob(job))
+            putRecord(db, "gateway_attempts", "attempt_id", attempt.attemptId, attempt.jobId, encodeAttempt(attempt))
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    @Synchronized
+    fun loadJob(jobId: String): GatewayJobRecord? =
+        helper.readableDatabase.rawQuery(
+            "SELECT record_json FROM gateway_jobs WHERE job_id = ?",
+            arrayOf(jobId)
+        ).use { cursor -> if (cursor.moveToFirst()) decodeJob(cursor.getString(0)) else null }
+
+    @Synchronized
+    fun loadAttempts(jobId: String): List<GatewayAttemptRecord> = buildList {
+        helper.readableDatabase.rawQuery(
+            "SELECT record_json FROM gateway_attempts WHERE job_id = ? ORDER BY attempt_number ASC",
+            arrayOf(jobId)
+        ).use { cursor ->
+            while (cursor.moveToNext()) add(decodeAttempt(cursor.getString(0)))
+        }
+    }
+
+    private fun putRecord(
+        db: SQLiteDatabase,
+        table: String,
+        key: String,
+        id: String,
+        jobId: String?,
+        json: String
+    ) {
+        val values = ContentValues().apply {
+            put(key, id)
+            if (jobId != null) put("job_id", jobId)
+            put("record_json", json)
+            if (table == "gateway_attempts") put("attempt_number", JSONObject(json).getInt("attemptNumber"))
+        }
+        db.insertWithOnConflict(table, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    private fun encodeJob(r: GatewayJobRecord): String = JSONObject()
+        .put("jobId", r.jobId).put("tenantId", r.tenantId).put("clientId", r.clientId)
+        .put("gatewayId", r.gatewayId).put("leaseId", r.leaseId)
+        .put("leaseExpiresAt", r.leaseExpiresAt).put("payloadJson", r.payloadJson)
+        .put("state", r.state.name).put("updatedAt", r.updatedAt).toString()
+
+    private fun decodeJob(raw: String): GatewayJobRecord {
+        val j = JSONObject(raw)
+        return GatewayJobRecord(
+            j.getString("jobId"), j.getString("tenantId"), j.getString("clientId"),
+            j.getString("gatewayId"), j.getString("leaseId"), j.getString("leaseExpiresAt"),
+            j.getString("payloadJson"), GatewayJobState.valueOf(j.getString("state")),
+            j.getString("updatedAt")
+        )
+    }
+
+    private fun encodeAttempt(r: GatewayAttemptRecord): String = JSONObject()
+        .put("attemptId", r.attemptId).put("jobId", r.jobId)
+        .put("attemptNumber", r.attemptNumber).put("state", r.state.name)
+        .put("createdAt", r.createdAt).put("updatedAt", r.updatedAt)
+        .put("transactionId", r.transactionId ?: JSONObject.NULL)
+        .put("sendStartedAt", r.sendStartedAt ?: JSONObject.NULL)
+        .put("sentAt", r.sentAt ?: JSONObject.NULL)
+        .put("responseDeadline", r.responseDeadline ?: JSONObject.NULL)
+        .put("completedAt", r.completedAt ?: JSONObject.NULL)
+        .put("errorCode", r.errorCode ?: JSONObject.NULL)
+        .put("errorMessage", r.errorMessage ?: JSONObject.NULL)
+        .put("resultJson", r.resultJson ?: JSONObject.NULL).toString()
+
+    private fun decodeAttempt(raw: String): GatewayAttemptRecord {
+        val j = JSONObject(raw)
+        return GatewayAttemptRecord(
+            attemptId = j.getString("attemptId"), jobId = j.getString("jobId"),
+            attemptNumber = j.getInt("attemptNumber"),
+            state = GatewayAttemptState.valueOf(j.getString("state")),
+            createdAt = j.getString("createdAt"), updatedAt = j.getString("updatedAt"),
+            transactionId = j.nullable("transactionId"), sendStartedAt = j.nullable("sendStartedAt"),
+            sentAt = j.nullable("sentAt"), responseDeadline = j.nullable("responseDeadline"),
+            completedAt = j.nullable("completedAt"), errorCode = j.nullable("errorCode"),
+            errorMessage = j.nullable("errorMessage"), resultJson = j.nullable("resultJson")
+        )
+    }
+
+    private fun JSONObject.nullable(key: String): String? =
+        if (!has(key) || isNull(key)) null else optString(key).takeIf(String::isNotBlank)
 
     fun close() = helper.close()
 
@@ -121,15 +272,22 @@ class SqliteSmsChannelStateStore(context: Context) : SmsChannelStateStore {
                 )
                 """.trimIndent()
             )
+            createWorkTables(db)
         }
 
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            // Preserve the durable snapshot. Future schema changes must use explicit migrations.
+            if (oldVersion < 2) createWorkTables(db)
+        }
+
+        private fun createWorkTables(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS gateway_jobs (job_id TEXT PRIMARY KEY NOT NULL, record_json TEXT NOT NULL)")
+            db.execSQL("CREATE TABLE IF NOT EXISTS gateway_attempts (attempt_id TEXT PRIMARY KEY NOT NULL, job_id TEXT NOT NULL, attempt_number INTEGER NOT NULL, record_json TEXT NOT NULL)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_gateway_attempts_job ON gateway_attempts(job_id, attempt_number)")
         }
 
         companion object {
             private const val DATABASE_NAME = "devmonitor_gateway_worker.db"
-            private const val DATABASE_VERSION = 1
+            private const val DATABASE_VERSION = 2
         }
     }
 }
