@@ -44,3 +44,13 @@ The 3030 protocol does not echo the queried device or partner code. Therefore a 
 - The processor is not wired to the receiver or active worker yet. It must only be invoked after the worker restores its durable channel state and configures an evidence-based post-reply quiet period.
 - Accepted payloads are staged locally only. No controller submission, outbound SMS, automatic retry or queue advancement is enabled.
 - Parser field labels are based on the supplied protocol description. A redacted real carrier response is still required to validate formatting and any optional labels before production parsing is enabled.
+
+
+## Android SMS send-result callback — 15 Nov 2026
+
+- Added a private, non-exported SMS_SENT result receiver. Each callback PendingIntent is package-bound and uniquely keyed by the durable attempt ID.
+- The receiver records Android's send outcome against the matching attempt and job in one SQLite transaction.
+- A successful Android send-result advances SENDING to AWAITING_REPLY; a failed result advances the attempt to SEND_FAILED and job to FAILED. Duplicate, late, unknown, or out-of-order callbacks are ignored unless both durable records are still in SENDING.
+- No automatic resend, queue advancement, controller submission, or reply correlation is performed by this callback.
+- Important distinction: RESULT_OK means Android reported the SMS send operation successful; it does not prove 3030 received or processed the query.
+- The callback is implemented but not yet wired into a controller-authorized live worker path. Runtime delivery, process-death recovery, and dual-SIM physical testing remain outstanding.
