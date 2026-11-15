@@ -37,7 +37,15 @@ class GatewaySmsDispatchCoordinator(context: Context) {
         try {
             controller.markSending(work.jobId, work.attemptId, ledger, leaseTokens)
         } catch (failure: Exception) {
-            // The server may have committed despite a lost response. Never send on uncertainty.
+            // The server may have committed despite a lost response. Try the existing
+            // ambiguity transition, but never send when acceptance is uncertain.
+            runCatching {
+                controller.markAmbiguous(
+                    work.jobId, work.attemptId,
+                    "SENDING acceptance could not be confirmed; no SMS was submitted",
+                    ledger, leaseTokens
+                )
+            }
             return GatewayCoordinatedDispatch.NotSent(
                 "Controller SENDING acceptance could not be confirmed; no SMS was sent. Reconcile this lease before further work."
             )
