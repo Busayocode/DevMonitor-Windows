@@ -3,6 +3,7 @@
     <application
         android:allowBackup="false"
         android:label="DevMonitor Gateway"
+        android:icon="@drawable/devmonitor_icon"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
