@@ -74,6 +74,13 @@ import kotlinx.coroutines.launch
 
 private data class GatewayNavigationItem(val label: String, val glyph: String, val tab: Int)
 
+data class GatewaySimOption(
+    val subscriptionId: Int,
+    val slotIndex: Int,
+    val carrierName: String,
+    val ready: Boolean
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GatewayHomeScreen(
@@ -95,6 +102,9 @@ fun GatewayHomeScreen(
     phoneStatePermissionGranted: Boolean,
     activeSimCount: Int,
     readySimCount: Int,
+    availableGatewaySims: List<GatewaySimOption>,
+    selectedSimSubscriptionId: Int?,
+    onSelectGatewaySim: (Int) -> Unit,
     onRequestSmsReadiness: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onStartWorker: () -> Unit,
@@ -276,7 +286,7 @@ fun GatewayHomeScreen(
                                 onVerifyToken, onTestController, onRegisterGateway
                             )
                             1 -> GatewayQueueContent()
-                            2 -> GatewayPhoneContent(workerState, gatewayId, controllerUrl, batteryOptimizationIgnored, smsPermissionsGranted, phoneStatePermissionGranted, activeSimCount, readySimCount, onRequestSmsReadiness, onOpenBatterySettings, onStartWorker, onStopWorker)
+                            2 -> GatewayPhoneContent(workerState, gatewayId, controllerUrl, batteryOptimizationIgnored, smsPermissionsGranted, phoneStatePermissionGranted, activeSimCount, readySimCount, availableGatewaySims, selectedSimSubscriptionId, onSelectGatewaySim, onRequestSmsReadiness, onOpenBatterySettings, onStartWorker, onStopWorker)
                             else -> GatewayAccountContent(signedIn, gatewayId, busy, onVerifyToken)
                         }
                         Spacer(Modifier.height(8.dp))
@@ -431,6 +441,9 @@ private fun GatewayPhoneContent(
     phoneStatePermissionGranted: Boolean,
     activeSimCount: Int,
     readySimCount: Int,
+    availableGatewaySims: List<GatewaySimOption>,
+    selectedSimSubscriptionId: Int?,
+    onSelectGatewaySim: (Int) -> Unit,
     onRequestSmsReadiness: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onStartWorker: () -> Unit,
@@ -484,6 +497,41 @@ private fun GatewayPhoneContent(
         Text("SMS send/receive permissions: ${if (smsPermissionsGranted) "granted" else "not granted"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("Phone-state permission: ${if (phoneStatePermissionGranted) "granted" else "not granted"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("Active SIM subscriptions: $activeSimCount • SIMs reporting READY: $readySimCount", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        var simMenuExpanded by remember { mutableStateOf(false) }
+        val selectedSim = availableGatewaySims.firstOrNull { it.subscriptionId == selectedSimSubscriptionId }
+        Text("SIM for Gateway SMS", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Box(Modifier.fillMaxWidth()) {
+            DevMonitorOutlinedButton(
+                onClick = { simMenuExpanded = true },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = availableGatewaySims.any { it.ready }
+            ) {
+                Text(selectedSim?.let { "SIM ${it.slotIndex + 1} • ${it.carrierName}" } ?: "Choose a SIM")
+            }
+            androidx.compose.material3.DropdownMenu(
+                expanded = simMenuExpanded,
+                onDismissRequest = { simMenuExpanded = false }
+            ) {
+                availableGatewaySims.forEach { sim ->
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = {
+                            Text("SIM ${sim.slotIndex + 1} • ${sim.carrierName}${if (sim.ready) " • READY" else " • NOT READY"}")
+                        },
+                        onClick = {
+                            simMenuExpanded = false
+                            if (sim.ready) onSelectGatewaySim(sim.subscriptionId)
+                        },
+                        enabled = sim.ready
+                    )
+                }
+            }
+        }
+        if (selectedSim == null) {
+            Text("No SIM is selected. Choose a ready SIM before Gateway SMS work can be enabled. The app will not choose a line automatically.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        } else {
+            AuroraStatusPill("SELECTED • SIM ${selectedSim.slotIndex + 1}", if (selectedSim.ready) AuroraEmerald else AuroraCyan)
+            Text("${selectedSim.carrierName} is selected. If this subscription disappears or changes, the selection is cleared and the Gateway must be paused for a new choice.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
         DevMonitorOutlinedButton(onClick = onRequestSmsReadiness, modifier = Modifier.fillMaxWidth()) {
             Text(if (smsPermissionsGranted && phoneStatePermissionGranted) "Refresh SMS and SIM readiness" else "Review SMS permissions")
         }
