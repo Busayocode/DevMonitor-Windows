@@ -37,16 +37,25 @@ class GatewayDispatchRecoveryAdapter {
         val unresolved = ledger.loadUnresolvedDispatches()
 
         if (server == null) {
-            if (unresolved.isEmpty()) {
+            val channel = ledger.load()
+            if (unresolved.isEmpty() && channel.state == SmsChannelState.IDLE && channel.transaction == null) {
                 return GatewayRecoveryResult(
                     GatewayRecoveryStatus.NO_ACTIVE_WORK,
-                    "Controller and local ledger report no unresolved dispatch."
+                    "Controller, local ledger and SMS channel report no unresolved dispatch."
                 )
             }
-            gate.quarantine("Local unresolved dispatch exists but controller reports no active attempt.")
+            if (unresolved.isEmpty() && channel.state == SmsChannelState.DRAINING &&
+                channel.drainUntil?.let { now.isBefore(it) } == true
+            ) {
+                return GatewayRecoveryResult(
+                    GatewayRecoveryStatus.WAITING_FOR_DRAIN_WINDOW,
+                    "The previous 3030 reply is still inside its quiet period; no new SMS may be sent."
+                )
+            }
+            gate.quarantine("Local unresolved work or a non-idle SMS channel exists but controller reports no active attempt.")
             return GatewayRecoveryResult(
                 GatewayRecoveryStatus.QUARANTINED,
-                "Orphaned local work found without a matching controller attempt; operator reconciliation is required."
+                "Orphaned local work or channel state found without a matching controller attempt; operator reconciliation is required."
             )
         }
 
