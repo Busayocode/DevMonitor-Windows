@@ -55,6 +55,7 @@ It does **not** prove live Google/Firebase sign-in, a successful request to a de
 - [ ] Verify authenticated client calls against a controlled HTTPS test controller when one is approved and available.
 
 ### B. Dedicated Android Gateway phone worker
+- [x] Add isolated Kotlin transaction-safety core with tests (Android persistence adapter and CI validation pending).
 - [ ] Create the actual worker app/service; the current APK is only an ordinary client/auth prototype.
 - [ ] Register a dedicated phone installation and securely store its revocable credential.
 - [ ] Implement controller-assigned job receipt and health heartbeats.
@@ -127,7 +128,7 @@ It does **not** prove live Google/Firebase sign-in, a successful request to a de
 
 1. Verify real Google/Firebase sign-in on the current Gateway APK.
 2. Complete controller integration/security tests on an isolated test database; no paid deployment yet.
-3. Build the dedicated Gateway worker foreground-service foundation.
+3. Complete worker-core CI and implement durable Android transaction-state persistence before selecting the compliant foreground-service type.
 4. Connect one worker to a test controller and run one controlled 3030 transaction with ambiguity protection.
 5. Add a second worker and validate queue assignment, isolation and recovery.
 6. Integrate the Gateway transport into the separate Gateway edition and run permission/regression checks.
