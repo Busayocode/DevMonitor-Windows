@@ -311,5 +311,5 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - [ ] Connect the selected subscription to SmsManager.createForSubscriptionId() in the eventual worker sender; revalidate active + READY immediately before each send.
 - [ ] If a manually selected subscription disappears or becomes unavailable, pause SMS work and require operator action; never fall back to Android's default SMS subscription.
 - [ ] Add unit/instrumentation coverage for multiple Glo SIMs, mixed carriers, no Glo SIM, SIM lock/removal, and manual override.
-- [ ] Build and verify the current Gateway branch after this UI/state update.
+- [x] Build and verify the current Gateway branch after this UI/state update — Gateway workflow run #91 (`43711966513`) passed on 15 Nov 2026; APK and source package uploaded. No real-device SIM/SMS test is implied.
 - **Current boundary:** this remains selection/readiness groundwork. No SMS is sent or received; heartbeat SMS/telephony readiness remains false.
