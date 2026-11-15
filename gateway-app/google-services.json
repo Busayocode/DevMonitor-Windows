@@ -1,0 +1,92 @@
+{
+  "project_info": {
+    "project_number": "276884313547",
+    "project_id": "fieldpulse-b3eb3",
+    "storage_bucket": "fieldpulse-b3eb3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:276884313547:android:8d996f04cda5a39204d24e",
+        "android_client_info": {
+          "package_name": "com.aziitech.devmonitor.gateway"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "276884313547-08bhskm4n9dp2cb68pldk7que2avphva.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aziitech.devmonitor.gateway",
+            "certificate_hash": "4b413612ea4c9fed93461ec66877457b6559e002"
+          }
+        },
+        {
+          "client_id": "276884313547-io3of4dq1830bf9fmd514gf7qfb601ff.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBqnnXrXuIj5JJBNvQqReLWMfbCtCli7Rw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "276884313547-io3of4dq1830bf9fmd514gf7qfb601ff.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:276884313547:android:6e3b35256b82b6d304d24e",
+        "android_client_info": {
+          "package_name": "com.aziitech.simregmonitor"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "276884313547-b0g6g75uiups945tgtbb6a5plo60c39t.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aziitech.simregmonitor",
+            "certificate_hash": "4b413612ea4c9fed93461ec66877457b6559e002"
+          }
+        },
+        {
+          "client_id": "276884313547-ba1ceoom21bhgobuns456t4es96r5m6i.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aziitech.simregmonitor",
+            "certificate_hash": "8ac31b96527df89683d584a6d599100d885df536"
+          }
+        },
+        {
+          "client_id": "276884313547-io3of4dq1830bf9fmd514gf7qfb601ff.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBqnnXrXuIj5JJBNvQqReLWMfbCtCli7Rw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "276884313547-io3of4dq1830bf9fmd514gf7qfb601ff.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
