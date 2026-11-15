@@ -367,8 +367,12 @@ private fun GatewayOverviewContent(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 label = { Text("HTTPS base URL") },
-                placeholder = { Text("https://controller.example") }
+                placeholder = { Text("https://controller.example") },
+                enabled = gatewayId == null && !busy
             )
+            if (gatewayId != null) {
+                Text("This endpoint is pinned to the registered Gateway identity. Changing it requires a controlled identity recovery.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
             androidx.compose.material3.OutlinedTextField(
                 value = gatewayDisplayName,
                 onValueChange = onGatewayDisplayNameChange,
@@ -423,7 +427,7 @@ private fun GatewayPhoneContent(
     AuroraGlassCard(Modifier.fillMaxWidth(), AuroraEmerald) {
         AuroraStatusPill(
             when (workerState) {
-                "RUNNING" -> "HEARTBEAT ACTIVE"
+                "RUNNING" -> "SERVICE ACTIVE"
                 "PAUSED" -> "HEARTBEAT PAUSED"
                 "STARTING" -> "STARTING"
                 else -> "WORKER STOPPED"
