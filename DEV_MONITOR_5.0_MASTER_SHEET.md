@@ -362,3 +362,16 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - [ ] Run controlled physical-device tests with the selected Glo SIM and a redacted real 3030 response before enabling queue execution.
 
 **Current operational boundary:** sender and callback primitives compile, but the foreground service still reports SMS/telephony readiness as false and does not claim or execute jobs. No live SMS capability is claimed.
+
+
+## 25. Controller-authorised dispatch coordinator — 15 Nov 2026
+
+- Added an explicit `GatewaySmsDispatchCoordinator` API; it is not yet invoked by the foreground service or a background queue loop.
+- The coordinator requires a previously claimed job, an explicit selected subscription ID, encrypted lease-token store, durable SQLite ledger, transaction gate and a positive caller-supplied response timeout.
+- It first asks the controller to accept `SENDING`. If acceptance is uncertain, it attempts the existing `ambiguous` transition and never transmits.
+- After controller acceptance, it opens the one-at-a-time durable transaction gate, persists transaction ID/send start/response deadline, creates the attempt-specific SMS_SENT PendingIntent and calls the subscription-pinned sender exactly once.
+- Missing/unready SIM, permission loss, persistence failure or Android submission rejection causes safety quarantine and an attempt to use the existing controller `ambiguous` transition. No default SIM fallback and no automatic retry.
+- Added restart-replay API for the durable SMS_SENT callback: successful platform callback is reported through the existing `awaiting-reply` endpoint; failed callback uses the existing `ambiguous` endpoint. No unsupported send-failed controller route is assumed.
+- Added explicit transaction-gate quarantine operation and a unit test proving new work remains blocked until operator resolution.
+- **Not yet operational:** foreground service still does not claim or dispatch jobs; callback reconciliation is not scheduled; active transaction/inbox restoration and controller result submission are not integrated. The caller-supplied response timeout and post-reply quiet period require measured carrier evidence.
+- CI for this commit sequence is pending. No physical SIM or real 3030 exchange is claimed.
