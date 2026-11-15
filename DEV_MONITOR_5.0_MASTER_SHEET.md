@@ -145,7 +145,17 @@ It does **not** prove live Google/Firebase sign-in, a successful request to a de
 - Artifacts: `DevMonitor-Gateway-5.0-debug` (~4.33 MB) and `DevMonitor-Gateway-5.0-Source` (~82.6 KB). Both are temporary Actions artifacts, expiring 29 Nov 2026.
 - Scope: automated compile/unit-test/package validation only. No live-device SMS or controller test is implied.
 
-## 9. Evidence and status discipline
+## 9. Gateway visual parity work
+
+- Reference inspected: v337 Android source archive retrieved and inspected internally.
+- Design system: Aurora / Jetpack Compose / Material 3.
+- Implemented in source: Gateway-owned copies of FieldPulseUi.kt, StateComponents.kt and GatewayAuroraTheme.kt; Compose enabled in Gateway build; bare diagnostic layout replaced by an Aurora-based four-section Gateway shell.
+- Visual components reused: Aurora palette/background, gradient and outlined buttons, glass cards, hero, metric cards, section headers, status pills, custom navigation glyphs and loading/empty/error/offline state components.
+- CI: new Gateway Compose build validation is pending. Do not ask the user to install this intermediate build until the run passes.
+- Not yet complete: full drawer/navigation parity, floating waiting loader, launcher branding, dialogs and transitions, responsive screenshot comparison and final visual QA.
+- Acceptance: do not claim 100% parity until all those areas are compared against the main app at matching device sizes.
+
+## 10. Evidence and status discipline
 
 Use these labels consistently:
 
