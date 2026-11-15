@@ -41,6 +41,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation(project(":gateway-auth-android"))
+    implementation(project(":gateway-worker-core"))
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("com.google.android.gms:play-services-auth:21.3.0")
     implementation(platform("com.google.firebase:firebase-bom:33.16.0"))
