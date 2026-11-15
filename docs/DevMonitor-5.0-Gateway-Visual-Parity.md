@@ -33,16 +33,17 @@ Verified design tokens:
 - Reused the original brand mark in both toolbar and drawer.
 
 ## Still required before claiming visual parity
-- CI validation of the new Compose implementation.
-- Copy/use the original DevMonitor app icon and verify the launcher/screen branding.
-- Implement the full Gateway navigation drawer, screen transitions, dialogs, and detailed Gateway workflows using the same patterns.
-- Port and adapt the main app's floating waiting loader rather than relying only on a standard spinner.
-- Compare screenshots at matching phone dimensions; check spacing, typography, card elevation, button dimensions, responsive layouts and animation timing.
-- Test light/dark behavior and reduced-motion accessibility.
-- Record any intentional Gateway-only differences.
+- [x] Compose compilation issue identified from CI and corrected (missing animation/graphics imports); awaiting rerun.
+- [x] Original DevMonitor brand icon applied to the Gateway launcher manifest.
+- [x] Branded modal drawer, four destinations, animated screen transitions and floating Aurora waiting overlay implemented.
+- [x] Reusable Aurora buttons, cards, hero, metrics, status pills and loading/empty/error/offline states are available in the Gateway package.
+- [ ] Compare screenshots at matching phone dimensions; check spacing, typography, card elevation, button dimensions, responsive layouts and animation timing on a real device.
+- [ ] Test light/dark behavior and reduced-motion accessibility on device.
+- [ ] Compare dialog and detailed workflow interactions as those Gateway screens are implemented; refine visual details continuously during development.
+- [ ] Record any intentional Gateway-only differences.
 
 ## Acceptance gate
-Do not call visual parity complete based on theme colours or a single dashboard screen. Navigation structure, control styling, motion, loading/waiting states, dialogs, empty/error/success states and responsive layout must all be checked against the reference app. Record any intentional Gateway-only differences.
+Treat the current Aurora implementation as the shared visual baseline, not a claim of pixel-perfect completion. The remaining parity gate is device screenshot/interaction QA at matching dimensions, accessibility checks and iterative comparison of dialogs and future workflows. Refine those details alongside feature development; do not block the Gateway engineering sequence on cosmetic micro-tuning.
 
 ## Source reference
 The reference archive is v337 from the development branch. It is a reference source only; no Full-edition code or business logic has been merged into the Gateway app.
