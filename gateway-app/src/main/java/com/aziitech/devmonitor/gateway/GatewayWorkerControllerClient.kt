@@ -162,12 +162,14 @@ class GatewayWorkerControllerClient(
         )
 
         // Persist the secret first. SQLite stores only the attempt reference, never the token.
-        leaseTokens.put(attemptId, leaseToken)
-        try {
-            ledger.saveClaim(jobRecord, attemptRecord)
-        } catch (failure: Throwable) {
-            leaseTokens.remove(attemptId)
-            throw failure
+        withContext(Dispatchers.IO) {
+            leaseTokens.put(attemptId, leaseToken)
+            try {
+                ledger.saveClaim(jobRecord, attemptRecord)
+            } catch (failure: Throwable) {
+                leaseTokens.remove(attemptId)
+                throw failure
+            }
         }
         return ClaimedGatewayWork(jobId, attemptId, deviceId, profile, attemptNumber, expiresAt)
     }
@@ -184,12 +186,14 @@ class GatewayWorkerControllerClient(
         post(jobPath(jobId, "sending"), JSONObject()
             .put("attempt_id", attemptId)
             .put("lease_token", token))
-        val (job, attempt) = requireLocalPair(ledger, jobId, attemptId)
-        val now = Instant.now().toString()
-        ledger.saveJobAndAttempt(
-            job.copy(state = GatewayJobState.SENDING, updatedAt = now),
-            attempt.copy(state = GatewayAttemptState.SENDING, sendStartedAt = now, updatedAt = now)
-        )
+        withContext(Dispatchers.IO) {
+            val (job, attempt) = requireLocalPair(ledger, jobId, attemptId)
+            val now = Instant.now().toString()
+            ledger.saveJobAndAttempt(
+                job.copy(state = GatewayJobState.SENDING, updatedAt = now),
+                attempt.copy(state = GatewayAttemptState.SENDING, sendStartedAt = now, updatedAt = now)
+            )
+        }
     }
 
     suspend fun markAwaitingReply(
@@ -206,16 +210,18 @@ class GatewayWorkerControllerClient(
             .put("attempt_id", attemptId)
             .put("lease_token", token)
             .put("sms_sent_at", smsSentAt))
-        val (job, attempt) = requireLocalPair(ledger, jobId, attemptId)
-        val now = Instant.now().toString()
-        ledger.saveJobAndAttempt(
-            job.copy(state = GatewayJobState.AWAITING_REPLY, updatedAt = now),
-            attempt.copy(
-                state = GatewayAttemptState.AWAITING_REPLY,
-                sentAt = smsSentAt,
-                updatedAt = now
+        withContext(Dispatchers.IO) {
+            val (job, attempt) = requireLocalPair(ledger, jobId, attemptId)
+            val now = Instant.now().toString()
+            ledger.saveJobAndAttempt(
+                job.copy(state = GatewayJobState.AWAITING_REPLY, updatedAt = now),
+                attempt.copy(
+                    state = GatewayAttemptState.AWAITING_REPLY,
+                    sentAt = smsSentAt,
+                    updatedAt = now
+                )
             )
-        )
+        }
     }
 
     suspend fun markAmbiguous(
@@ -231,17 +237,19 @@ class GatewayWorkerControllerClient(
         post(jobPath(jobId, "ambiguous"), JSONObject()
             .put("attempt_id", attemptId)
             .put("reason", reason.take(160)))
-        val (job, attempt) = requireLocalPair(ledger, jobId, attemptId)
-        val now = Instant.now().toString()
-        ledger.saveJobAndAttempt(
-            job.copy(state = GatewayJobState.AMBIGUOUS, updatedAt = now),
-            attempt.copy(
-                state = GatewayAttemptState.AMBIGUOUS,
-                errorMessage = reason.take(160),
-                updatedAt = now
+        withContext(Dispatchers.IO) {
+            val (job, attempt) = requireLocalPair(ledger, jobId, attemptId)
+            val now = Instant.now().toString()
+            ledger.saveJobAndAttempt(
+                job.copy(state = GatewayJobState.AMBIGUOUS, updatedAt = now),
+                attempt.copy(
+                    state = GatewayAttemptState.AMBIGUOUS,
+                    errorMessage = reason.take(160),
+                    updatedAt = now
+                )
             )
-        )
-        leaseTokens.remove(attemptId)
+            leaseTokens.remove(attemptId)
+        }
     }
 
 
@@ -268,18 +276,20 @@ class GatewayWorkerControllerClient(
             .put("received_at", receivedAt)
             .put("values", values)
             .put("parser_version", parserVersion))
-        val (job, attempt) = requireLocalPair(ledger, jobId, attemptId)
-        val now = Instant.now().toString()
-        ledger.saveJobAndAttempt(
-            job.copy(state = GatewayJobState.COMPLETED, updatedAt = now),
-            attempt.copy(
-                state = GatewayAttemptState.COMPLETED,
-                completedAt = now,
-                resultJson = values.toString(),
-                updatedAt = now
+        withContext(Dispatchers.IO) {
+            val (job, attempt) = requireLocalPair(ledger, jobId, attemptId)
+            val now = Instant.now().toString()
+            ledger.saveJobAndAttempt(
+                job.copy(state = GatewayJobState.COMPLETED, updatedAt = now),
+                attempt.copy(
+                    state = GatewayAttemptState.COMPLETED,
+                    completedAt = now,
+                    resultJson = values.toString(),
+                    updatedAt = now
+                )
             )
-        )
-        leaseTokenStore.remove(attemptId)
+            leaseTokenStore.remove(attemptId)
+        }
     }
 
     private suspend fun requireLeaseToken(
