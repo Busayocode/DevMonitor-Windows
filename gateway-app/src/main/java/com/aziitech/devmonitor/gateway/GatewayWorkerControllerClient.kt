@@ -333,7 +333,7 @@ class GatewayWorkerControllerClient(
             .header("Accept", "application/json")
             .post(body.toString().toRequestBody(JSON_MEDIA_TYPE))
             .build()
-        http.newCall(request).execute().use { response ->
+        return http.newCall(request).execute().use { response ->
             val raw = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
                 throw IOException("Gateway controller returned HTTP ${response.code}: ${raw.take(240)}")
