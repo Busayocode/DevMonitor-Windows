@@ -57,7 +57,7 @@ It does **not** prove live Google/Firebase sign-in, a successful request to a de
 
 ### B. Dedicated Android Gateway phone worker
 - [x] Add isolated Kotlin transaction-safety core with tests; GitHub CI passed in run #43682711793.
-- [ ] Implement the durable Android persistence adapter; the current test store is in-memory only.
+- [x] Implement a durable Android SQLite adapter for the worker-core snapshot contract (single-row atomic snapshot, transaction metadata, drain/quarantine state and duplicate-message fingerprints); CI compile/test rerun pending.
 - [ ] Create the actual worker app/service; the current APK is only an ordinary client/auth prototype.
 - [ ] Register a dedicated phone installation and securely store its revocable credential.
 - [ ] Implement controller-assigned job receipt and health heartbeats.
@@ -92,7 +92,7 @@ It does **not** prove live Google/Firebase sign-in, a successful request to a de
 ### F. Android availability and reliability
 - [ ] Implement a compliant foreground worker service (not an Activity-owned coroutine).
 - [ ] Add a persistent notification with truthful states and Pause/Resume/Stop controls.
-- [ ] Persist job, attempt, lease and send state across process interruption.
+- [ ] Extend durable persistence from the SMS channel snapshot to controller job, attempt, lease and send lifecycle records.
 - [ ] Check Android 14+ foreground-service type/permission and boot-start restrictions.
 - [ ] Provide user-guided battery-optimization settings for dedicated worker phones only.
 - [ ] Test screen-off, Doze, Wi-Fi/mobile transitions, process kill, swipe-away, reboot and force-stop.
@@ -130,7 +130,7 @@ It does **not** prove live Google/Firebase sign-in, a successful request to a de
 
 1. Verify real Google/Firebase sign-in on the current Gateway APK.
 2. Complete controller integration/security tests on an isolated test database; no paid deployment yet.
-3. Worker-core CI is now passed (run #43682711793); implement durable Android transaction-state persistence before selecting the compliant foreground-service type.
+3. Worker-core CI passed (run #43682711793); the Android SQLite snapshot adapter is now implemented on the isolated Gateway branch. Validate it in CI, then extend durable records to job/attempt/lease/send lifecycle before selecting the compliant foreground-service type.
 4. Connect one worker to a test controller and run one controlled 3030 transaction with ambiguity protection.
 5. Add a second worker and validate queue assignment, isolation and recovery.
 6. Integrate the Gateway transport into the separate Gateway edition and run permission/regression checks.
@@ -168,3 +168,20 @@ Use these labels consistently:
 - **Release accepted:** all agreed acceptance tests passed and the user approved promotion.
 
 Never describe the current Gateway APK as the completed Gateway 5.0 product. It is an authentication/client prototype only.
+
+
+## 10. Gateway visual baseline and latest implementation
+
+- Reference: DevMonitor v337 Aurora Compose/Material 3 source, inspected as a design reference only.
+- Gateway now has the shared Aurora palette, dark/light theme definitions, original reusable Aurora component set, branded toolbar and modal drawer, four navigation destinations, animated screen transitions, floating indeterminate wait overlay, and loading/empty/error/offline states.
+- Original DevMonitor launcher icon is now assigned in the Gateway manifest.
+- Latest visual CI run #43684136038 exposed missing Compose imports in the waiting-state file. The imports have been corrected in commit `8671a7cb84de5649b19686e93d6aa25a8b2ca520`; the launcher icon was applied in commit `fe0110efab534040be8b9e625957f2bb71221fd5`. A fresh CI pass is still required.
+- Visual parity is the continuing baseline: device screenshot comparisons, interaction QA, dialogs, accessibility and responsive refinements will be done as each feature is developed. No claim of pixel-perfect parity or release readiness is made yet.
+
+## 11. Durable Android worker state — first implementation
+
+- Added `gateway-app/.../worker/SqliteSmsChannelStateStore.kt`, an Android-only SQLiteOpenHelper adapter implementing the pure Kotlin `SmsChannelStateStore` interface.
+- Persists the channel state, active transaction identity and timing, drain deadline, duplicate-message fingerprints and operator resolution note in a single JSON snapshot row.
+- Snapshot replacement is enclosed in a SQLite transaction; the worker-core module remains Android-free.
+- This is the first durable persistence layer only. It is not yet wired to a live SMS receiver/service and does not yet persist controller job leases or outbound send lifecycle records.
+- Validation pending the next Gateway CI run; process-death/reboot recovery tests remain required.
