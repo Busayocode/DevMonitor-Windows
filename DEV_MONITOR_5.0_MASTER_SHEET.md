@@ -326,3 +326,12 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - This is intake only: no parsing, device/partner attribution, transaction completion, controller result submission, retry or outbound SMS is enabled. All received messages remain unassigned until the transaction gate and parser are integrated.
 - Documentation: `docs/DevMonitor-5.0-Gateway-SMS-Intake.md`.
 - CI run for this slice is pending. Physical-device and live 3030 validation remain outstanding.
+
+
+## 22. 3030 result parser and gated inbox processor — 15 Nov 2026
+
+- Added Android-free `Gateway3030ResponseParser` and parser tests. It requires the seven documented numeric metrics and rejects incomplete, duplicate, negative or non-numeric values.
+- Added `Gateway3030InboxProcessor`: verified 3030 inbox rows are evaluated against the existing per-Gateway transaction gate; duplicates, unsolicited, late, drain-window and quarantined messages are not attributed to a new job.
+- Inbox decisions are persisted. A matched result is staged as `ACCEPTED_PENDING_CONTROLLER`, not submitted to the controller.
+- Processing remains an explicit worker-stage API and is not automatically invoked by the broadcast receiver. No outbound SMS, controller result submission, retry or queue advancement is enabled.
+- CI run is pending. Actual 3030 message formatting must still be checked against a redacted live sample; exact carrier date formatting remains unnormalized.
