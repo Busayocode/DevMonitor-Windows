@@ -92,7 +92,18 @@ class MainActivity : ComponentActivity() {
             try {
                 val saved = withContext(Dispatchers.IO) { credentialStore.load() }
                 gatewayId = saved?.gatewayId
-                if (saved != null) status = "This phone is already registered as Gateway ${saved.gatewayId}."
+                if (saved != null) {
+                    saved.controllerBaseUrl?.let { pinnedUrl ->
+                        controllerUrl = pinnedUrl
+                        getSharedPreferences(GatewayForegroundService.PREFERENCES, MODE_PRIVATE).edit()
+                            .putString(GatewayForegroundService.KEY_CONTROLLER_URL, pinnedUrl).apply()
+                    }
+                    status = if (saved.controllerBaseUrl == null) {
+                        "This phone is registered as Gateway ${saved.gatewayId}, but its controller endpoint is not pinned. Safe service startup is blocked until identity recovery is completed."
+                    } else {
+                        "This phone is already registered as Gateway ${saved.gatewayId}."
+                    }
+                }
             } catch (error: Exception) {
                 status = "A saved Gateway credential could not be unlocked. Registration is paused to avoid creating a duplicate identity. ${error.localizedMessage ?: ""}"
             }
@@ -163,16 +174,20 @@ class MainActivity : ComponentActivity() {
             status = "Register this phone with the controller before starting its heartbeat service."
             return
         }
-        if (!controllerUrl.trim().startsWith("https://", ignoreCase = true)) {
-            status = "Enter the approved HTTPS controller URL before starting the Gateway service."
-            return
-        }
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            launchGatewayWorkerService()
+        lifecycleScope.launch {
+            val saved = runCatching { withContext(Dispatchers.IO) { credentialStore.load() } }.getOrNull()
+            val pinnedUrl = saved?.controllerBaseUrl
+            if (pinnedUrl.isNullOrBlank() || pinnedUrl != controllerUrl.trim()) {
+                status = "The saved Gateway identity is not pinned to this controller endpoint. Service startup is blocked to protect the private credential."
+                return@launch
+            }
+            if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                launchGatewayWorkerService()
+            }
         }
     }
 
@@ -275,7 +290,10 @@ class MainActivity : ComponentActivity() {
                 )
                 val registered = client.registerGateway(displayName, firebaseIdToken, credentialStore)
                 gatewayId = registered.gatewayId
-                status = "Gateway registration succeeded. Its private controller credential is encrypted on this phone."
+                controllerUrl = registered.controllerBaseUrl
+                getSharedPreferences(GatewayForegroundService.PREFERENCES, MODE_PRIVATE).edit()
+                    .putString(GatewayForegroundService.KEY_CONTROLLER_URL, registered.controllerBaseUrl).apply()
+                status = "Gateway registration succeeded. Its private controller credential and pinned endpoint are encrypted on this phone."
             } catch (error: Exception) {
                 status = "Gateway registration failed: ${error.localizedMessage ?: "Unknown error"}"
             } finally {
