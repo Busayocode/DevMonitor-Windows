@@ -60,3 +60,12 @@ The controller also requires its dedicated PostgreSQL `DATABASE_URL`. Do not poi
 - The main branch or production application source.
 
 **Important:** Firebase project settings and downloaded app configuration cannot be verified from the repository. A successful CI compile with its dummy JSON is not proof of live Firebase configuration. The real app-specific JSON and live sign-in test are the remaining external verification steps.
+
+
+## Status update — 15 November 2026
+
+The separate Gateway Android app registration and app-specific `google-services.json` are now present on the isolated `devmonitor-5.0-gateway-android-download` branch for package `com.aziitech.devmonitor.gateway`. The registered signing fingerprint was checked against the phone-generated fingerprint in the preceding setup work. GitHub Actions run #43681725883 passed the package/configuration check, authentication unit tests and debug APK build.
+
+**Still unverified:** a real-device Google sign-in using this distinct Gateway app, retrieval of a live Firebase ID token on that device, and an authenticated request to a deployed HTTPS controller. The CI build does not perform those live operations. The existing Full edition registration and Google Drive OAuth configuration remain separate and unchanged.
+
+The Gateway branch contains the app-specific Firebase client configuration; do not substitute the Full edition's configuration. Never commit service-account private keys, signing private keys or installation bearer credentials.
