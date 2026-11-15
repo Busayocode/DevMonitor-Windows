@@ -91,6 +91,11 @@ fun GatewayHomeScreen(
     onRegisterGateway: () -> Unit,
     workerState: String,
     batteryOptimizationIgnored: Boolean,
+    smsPermissionsGranted: Boolean,
+    phoneStatePermissionGranted: Boolean,
+    activeSimCount: Int,
+    readySimCount: Int,
+    onRequestSmsReadiness: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onStartWorker: () -> Unit,
     onStopWorker: () -> Unit
@@ -271,7 +276,7 @@ fun GatewayHomeScreen(
                                 onVerifyToken, onTestController, onRegisterGateway
                             )
                             1 -> GatewayQueueContent()
-                            2 -> GatewayPhoneContent(workerState, gatewayId, controllerUrl, batteryOptimizationIgnored, onOpenBatterySettings, onStartWorker, onStopWorker)
+                            2 -> GatewayPhoneContent(workerState, gatewayId, controllerUrl, batteryOptimizationIgnored, smsPermissionsGranted, phoneStatePermissionGranted, activeSimCount, readySimCount, onRequestSmsReadiness, onOpenBatterySettings, onStartWorker, onStopWorker)
                             else -> GatewayAccountContent(signedIn, gatewayId, busy, onVerifyToken)
                         }
                         Spacer(Modifier.height(8.dp))
@@ -422,6 +427,11 @@ private fun GatewayPhoneContent(
     gatewayId: String?,
     controllerUrl: String,
     batteryOptimizationIgnored: Boolean,
+    smsPermissionsGranted: Boolean,
+    phoneStatePermissionGranted: Boolean,
+    activeSimCount: Int,
+    readySimCount: Int,
+    onRequestSmsReadiness: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onStartWorker: () -> Unit,
     onStopWorker: () -> Unit
@@ -455,6 +465,30 @@ private fun GatewayPhoneContent(
         ) { Text("Stop Gateway service") }
         Text(
             "Pause, resume and stop controls are also available in the persistent notification while the service is active.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+    AuroraGlassCard(Modifier.fillMaxWidth(), AuroraCyan) {
+        Text("SMS and SIM readiness", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        AuroraStatusPill(
+            when {
+                !smsPermissionsGranted -> "SMS PERMISSIONS NEEDED"
+                !phoneStatePermissionGranted -> "PHONE STATE PERMISSION NEEDED"
+                activeSimCount == 0 -> "NO ACTIVE SIM DETECTED"
+                readySimCount == 0 -> "SIM NOT READY"
+                else -> "PERMISSIONS + SIM READY"
+            },
+            if (smsPermissionsGranted && phoneStatePermissionGranted && activeSimCount > 0 && readySimCount > 0) AuroraEmerald else AuroraCyan
+        )
+        Text("SMS send/receive permissions: ${if (smsPermissionsGranted) "granted" else "not granted"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Phone-state permission: ${if (phoneStatePermissionGranted) "granted" else "not granted"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Active SIM subscriptions: $activeSimCount • SIMs reporting READY: $readySimCount", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        DevMonitorOutlinedButton(onClick = onRequestSmsReadiness, modifier = Modifier.fillMaxWidth()) {
+            Text(if (smsPermissionsGranted && phoneStatePermissionGranted) "Refresh SMS and SIM readiness" else "Review SMS permissions")
+        }
+        Text(
+            "Permissions are requested only after you tap this button. This step does not send or receive messages. Actual SMS transport, sender verification and transaction correlation are still disabled. Controller heartbeat readiness remains false until that transport is implemented and tested.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall
         )
