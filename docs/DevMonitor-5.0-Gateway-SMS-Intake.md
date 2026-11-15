@@ -54,3 +54,16 @@ The 3030 protocol does not echo the queried device or partner code. Therefore a 
 - No automatic resend, queue advancement, controller submission, or reply correlation is performed by this callback.
 - Important distinction: RESULT_OK means Android reported the SMS send operation successful; it does not prove 3030 received or processed the query.
 - The callback is implemented but not yet wired into a controller-authorized live worker path. Runtime delivery, process-death recovery, and dual-SIM physical testing remain outstanding.
+
+
+## Controller-authorised dispatch coordinator — 15 Nov 2026
+
+A separate explicit worker API now connects the existing controller state transition, durable local ledger, transaction gate, selected-SIM sender and attempt-specific SMS_SENT callback:
+
+1. It requires an already claimed job and explicit subscription ID; it does not choose a SIM or claim work.
+2. It requests controller `SENDING` acceptance first. If the response is uncertain, it does not send and attempts the existing ambiguity transition.
+3. It opens the one-active-transaction gate and persists the transaction ID, send-start timestamp and caller-supplied response deadline before invoking Android SMS.
+4. It sends only through the explicit selected subscription. A blocked/failed preparation quarantines the local channel and attempts the existing controller ambiguity transition.
+5. After process restart, the stored SMS_SENT outcome can be reconciled to the controller using its existing `awaiting-reply` or `ambiguous` transition. No new controller endpoint is presumed.
+
+**Important:** the coordinator is not called by the foreground service, no automatic claim/send loop is enabled, and callback reconciliation is not yet scheduled. A successful Android callback still does not prove 3030 receipt. Process-restart recovery, reply processing/controller result submission, and real measured timeout/drain settings remain incomplete.
