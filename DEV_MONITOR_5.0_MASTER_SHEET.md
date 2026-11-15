@@ -199,3 +199,13 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - `saveClaim` commits a claimed job and its first attempt in one SQLite transaction; `saveJobAndAttempt` commits subsequent paired lifecycle updates atomically.
 - CI run #43696679196 is the first run for the complete dependency/import/persistence integration; result is pending at the time of this update.
 - Not yet wired to a live controller or SMS service. Controller protocol validation, process-death recovery, lease-expiry reconciliation, and device-level SQLite tests remain outstanding.
+
+
+## 13. Controller claim contract alignment and lease-secret handling
+
+- The local job record was aligned to the actual reference controller claim function fields: job ID, gateway ID, canonical device ID, query profile, attempt number and lease expiry. It does not invent tenant/client/payload fields that the claim endpoint does not return.
+- Local job and attempt lifecycle enums now match the controller's reference states (including LEASED, SENDING, AWAITING_REPLY, AMBIGUOUS, COMPLETED, SEND_FAILED and TIMED_OUT).
+- The raw `lease_token` is a secret. It is deliberately excluded from the SQLite JSON records. Added `AndroidGatewayLeaseTokenStore`, which encrypts per-attempt tokens using an AES-256-GCM key held by Android Keystore; encrypted values are kept in private app preferences and can be retrieved/removed by attempt ID.
+- Controller claim contract confirmed against the foundation branch: `POST /v1/gateway/jobs/claim` returns a `job` object with `job_id`, `attempt_id`, `lease_token`, `canonical_device_id`, `query_profile`, `attempt_number`, and `lease_expires_at`. The existing reference API also defines `/sending`, `/awaiting-reply`, `/result`, `/send-failed`, `/ambiguous`, heartbeat and active-attempt recovery.
+- Next implementation: build an authenticated worker transport around these exact routes; after claim, persist job+attempt atomically and persist the lease token in Android Keystore before acknowledging work locally. Do not start SMS transmission until the server has accepted the SENDING transition.
+- The latest complete Android build run for the job-ledger and Keystore changes is still queued/pending at the time of this update. No APK build success is claimed for these newest changes.
