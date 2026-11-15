@@ -152,7 +152,7 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         val filter = IntentFilter(GatewayForegroundService.ACTION_STATE_CHANGED)
         if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(workerStateReceiver, filter, RECEIVER_NOT_EXPORTED)
+            registerReceiver(workerStateReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
         } else {
             @Suppress("DEPRECATION")
             registerReceiver(workerStateReceiver, filter)
