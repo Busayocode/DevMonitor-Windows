@@ -167,6 +167,44 @@ class GatewayWorkerControllerClient(
         leaseTokens.remove(attemptId)
     }
 
+
+    suspend fun submitResult(
+        jobId: String,
+        attemptId: String,
+        leaseTokenStore: AndroidGatewayLeaseTokenStore,
+        ledger: SqliteSmsChannelStateStore,
+        businessDate: String,
+        checkedAt: String,
+        receivedAt: String,
+        values: JSONObject,
+        parserVersion: String
+    ) {
+        requireUuid(jobId)
+        requireUuid(attemptId)
+        require(businessDate.isNotBlank() && checkedAt.isNotBlank() && receivedAt.isNotBlank() && parserVersion.isNotBlank())
+        val token = requireLeaseToken(leaseTokenStore, attemptId)
+        post(jobPath(jobId, "result"), JSONObject()
+            .put("attempt_id", attemptId)
+            .put("lease_token", token)
+            .put("business_date", businessDate)
+            .put("checked_at", checkedAt)
+            .put("received_at", receivedAt)
+            .put("values", values)
+            .put("parser_version", parserVersion))
+        val (job, attempt) = requireLocalPair(ledger, jobId, attemptId)
+        val now = Instant.now().toString()
+        ledger.saveJobAndAttempt(
+            job.copy(state = GatewayJobState.COMPLETED, updatedAt = now),
+            attempt.copy(
+                state = GatewayAttemptState.COMPLETED,
+                completedAt = now,
+                resultJson = values.toString(),
+                updatedAt = now
+            )
+        )
+        leaseTokenStore.remove(attemptId)
+    }
+
     private suspend fun requireLeaseToken(
         store: AndroidGatewayLeaseTokenStore,
         attemptId: String
