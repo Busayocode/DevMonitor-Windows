@@ -1,6 +1,7 @@
 package com.aziitech.devmonitor.gateway
 
 import com.aziitech.devmonitor.gateway.worker.AndroidGatewayLeaseTokenStore
+import com.aziitech.devmonitor.gateway.worker.AndroidGatewayCredentialStore
 import com.aziitech.devmonitor.gateway.worker.GatewayAttemptRecord
 import com.aziitech.devmonitor.gateway.worker.GatewayAttemptState
 import com.aziitech.devmonitor.gateway.worker.GatewayJobRecord
@@ -17,6 +18,20 @@ import org.json.JSONObject
 import java.io.IOException
 import java.time.Instant
 import java.util.UUID
+
+data class RegisteredGateway(val gatewayId: String)
+
+data class GatewayHeartbeatState(val gatewayId: String, val healthState: String)
+
+data class ControllerActiveAttempt(
+    val jobId: String,
+    val attemptId: String,
+    val state: String,
+    val leaseExpiresAt: String,
+    val canonicalDeviceId: String,
+    val queryProfile: String,
+    val localLeaseTokenAvailable: Boolean
+)
 
 data class ClaimedGatewayWork(
     val jobId: String,
@@ -43,6 +58,68 @@ class GatewayWorkerControllerClient(
 
     init {
         require(root.isHttps) { "Gateway controller must use HTTPS" }
+    }
+
+    /** Register this installation using the signed-in Firebase user token. The returned opaque token is stored encrypted. */
+    suspend fun registerGateway(
+        displayName: String,
+        firebaseIdToken: String,
+        credentialStore: AndroidGatewayCredentialStore
+    ): RegisteredGateway = withContext(Dispatchers.IO) {
+        require(displayName.isNotBlank() && displayName.length <= 80)
+        require(firebaseIdToken.isNotBlank())
+        val response = postWithBearer(
+            "v1/client/gateways",
+            JSONObject().put("display_name", displayName.trim()),
+            firebaseIdToken
+        )
+        val gatewayId = response.getString("gateway_id").also(::requireUuid)
+        val gatewayToken = response.getString("gateway_token")
+        require(gatewayToken.length >= 32) { "Controller returned an invalid Gateway credential" }
+        credentialStore.save(gatewayId, gatewayToken)
+        RegisteredGateway(gatewayId)
+    }
+
+    /** Report real phone readiness; do not claim SMS readiness until Android permissions/SIM checks exist. */
+    suspend fun heartbeat(
+        appVersion: String,
+        smsPermissionReady: Boolean,
+        telephonyReady: Boolean,
+        networkReady: Boolean,
+        lastSuccessful3030At: String? = null
+    ): GatewayHeartbeatState {
+        require(appVersion.isNotBlank() && appVersion.length <= 40)
+        val body = JSONObject()
+            .put("app_version", appVersion)
+            .put("sms_permission_ready", smsPermissionReady)
+            .put("telephony_ready", telephonyReady)
+            .put("network_ready", networkReady)
+        if (!lastSuccessful3030At.isNullOrBlank()) body.put("last_successful_3030_at", lastSuccessful3030At)
+        val response = post("v1/gateway/heartbeat", body)
+        return GatewayHeartbeatState(
+            response.getString("gateway_id").also(::requireUuid),
+            response.getString("health_state")
+        )
+    }
+
+    /** Read server-side active work and compare it with locally retained lease material.
+     * The server deliberately never returns lease tokens; missing local tokens require safe reconciliation.
+     */
+    suspend fun fetchActiveAttempt(
+        leaseTokens: AndroidGatewayLeaseTokenStore
+    ): ControllerActiveAttempt? {
+        val response = get("v1/gateway/active-attempt")
+        val active = response.optJSONObject("active_attempt") ?: return null
+        val attemptId = active.getString("attempt_id").also(::requireUuid)
+        return ControllerActiveAttempt(
+            jobId = active.getString("job_id").also(::requireUuid),
+            attemptId = attemptId,
+            state = active.getString("state"),
+            leaseExpiresAt = active.getString("lease_expires_at"),
+            canonicalDeviceId = active.getString("canonical_device_id"),
+            queryProfile = active.getString("query_profile"),
+            localLeaseTokenAvailable = withContext(Dispatchers.IO) { leaseTokens.get(attemptId) != null }
+        )
     }
 
     suspend fun claimAndPersist(
@@ -230,13 +307,21 @@ class GatewayWorkerControllerClient(
     ): JSONObject = withContext(Dispatchers.IO) {
         val token = gatewayTokenProvider()
         if (token.isBlank()) throw IllegalStateException("Gateway credential is unavailable")
+        postWithBearer(path, body, token, allowEmpty)
+    }
+
+    private fun postWithBearer(
+        path: String,
+        body: JSONObject,
+        bearer: String,
+        allowEmpty: Boolean = false
+    ): JSONObject {
         val url = root.newBuilder().addPathSegments(path).build()
-        val requestBody = body.toString().toRequestBody(JSON_MEDIA_TYPE)
         val request = Request.Builder()
             .url(url)
-            .header("Authorization", "Bearer $token")
+            .header("Authorization", "Bearer $bearer")
             .header("Accept", "application/json")
-            .post(requestBody)
+            .post(body.toString().toRequestBody(JSON_MEDIA_TYPE))
             .build()
         http.newCall(request).execute().use { response ->
             val raw = response.body?.string().orEmpty()
@@ -244,6 +329,25 @@ class GatewayWorkerControllerClient(
                 throw IOException("Gateway controller returned HTTP ${response.code}: ${raw.take(240)}")
             }
             if (raw.isBlank() && allowEmpty) JSONObject() else JSONObject(raw)
+        }
+    }
+
+    private suspend fun get(path: String): JSONObject = withContext(Dispatchers.IO) {
+        val token = gatewayTokenProvider()
+        if (token.isBlank()) throw IllegalStateException("Gateway credential is unavailable")
+        val url = root.newBuilder().addPathSegments(path).build()
+        val request = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/json")
+            .get()
+            .build()
+        http.newCall(request).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw IOException("Gateway controller returned HTTP ${response.code}: ${raw.take(240)}")
+            }
+            JSONObject(raw)
         }
     }
 
