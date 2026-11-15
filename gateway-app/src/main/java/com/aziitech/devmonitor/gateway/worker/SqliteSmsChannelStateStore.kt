@@ -22,6 +22,11 @@ data class GatewayJobRecord(
     val updatedAt: String
 )
 
+data class GatewayUnresolvedDispatch(
+    val job: GatewayJobRecord,
+    val attempt: GatewayAttemptRecord
+)
+
 data class GatewayAttemptRecord(
     val attemptId: String,
     val jobId: String,
