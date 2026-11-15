@@ -145,3 +145,17 @@ Use these labels consistently:
 - **Release accepted:** all agreed acceptance tests passed and the user approved promotion.
 
 Never describe the current Gateway APK as the completed Gateway 5.0 product. It is an authentication/client prototype only.
+
+
+## 9. Controller identity hardening — 15 November 2026
+
+**Implemented in source; CI validation pending.**
+
+- Firebase Authentication ID-token validation now explicitly rejects authentication timestamps that are in the future relative to token issuance or the controller clock (with a 60-second clock-skew allowance).
+- Authentication time and issued-at claims must be integer timestamps; boolean values are rejected even though Python treats booleans as integers.
+- Existing RS256 signature, exact issuer, exact project audience, expiry, issued-at, subject and required-claim validation remains in force.
+- Added regression tests for wrong issuer, expired tokens, future authentication timestamps and authentication timestamps later than token issuance.
+- No Firebase project settings, production credentials, database instances or paid infrastructure were changed.
+- No SMS sending or receiving was enabled by this controller-only change.
+
+**Next validation:** GitHub Actions must pass the controller suite, including PostgreSQL migrations, cache/history isolation and concurrent claim tests. This is CI evidence only; live Firebase identity-provider integration and real phone sign-in remain outstanding.
