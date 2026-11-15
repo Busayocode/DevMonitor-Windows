@@ -20,6 +20,8 @@ on:
       - devmonitor-5.0-gateway-android-download
     paths:
       - "gateway-app/**"
+      - "docs/**"
+      - "DEV_MONITOR_5.0_MASTER_SHEET.md"
       - "gateway-auth-android/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
