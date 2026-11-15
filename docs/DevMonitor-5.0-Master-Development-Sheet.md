@@ -173,3 +173,15 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - No credential, Firebase setting, deployment, SMS permission or SMS operation was enabled.
 
 **Next:** verify the new tests in GitHub Actions, then extend the same controlled integration coverage to user-token authentication/dependency handling and tenant-scoped request authorization.
+
+
+## 11. Firebase user authentication and tenant isolation regression tests — 15 November 2026
+
+**Added to source; CI validation pending.**
+
+- Added direct tests for the FastAPI Firebase user-authentication dependency: valid project-signed ID token resolves to the internal user record, missing bearer credentials return HTTP 401, missing Firebase configuration fails closed with HTTP 503, and a token signed by an untrusted key is rejected before any user database write.
+- Added batch-read authorization tests confirming that membership is checked first and the batch lookup is scoped to the requested tenant and original requesting user. Non-members and users who are not the batch requester receive the same not-found response.
+- These tests use controlled signing keys and database doubles. They do not replace live Firebase/JWKS integration, PostgreSQL role/row-level security review or a deployed-controller test.
+- No tenant data, production Firebase settings, infrastructure or SMS behavior was changed.
+
+**Next:** CI validation, then add tenant-boundary tests for queue snapshots, cancellation and gateway analytics, followed by a review of database constraints and runtime-role privileges.
