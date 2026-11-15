@@ -503,6 +503,7 @@ private fun GatewayPhoneContent(
         Text("Active SIM subscriptions: $activeSimCount • SIMs reporting READY: $readySimCount", color = MaterialTheme.colorScheme.onSurfaceVariant)
         var simMenuExpanded by remember { mutableStateOf(false) }
         val selectedSim = availableGatewaySims.firstOrNull { it.subscriptionId == selectedSimSubscriptionId }
+        val readyGloCount = availableGatewaySims.count { it.ready && it.isGlobacom }
         Text("SIM for Gateway SMS", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
         Box(Modifier.fillMaxWidth()) {
             DevMonitorOutlinedButton(
@@ -531,7 +532,11 @@ private fun GatewayPhoneContent(
             }
         }
         if (selectedSim == null) {
-            Text("The Gateway automatically selects the first READY Glo SIM by slot order. If none is detected, choose a SIM manually. Manual selection is remembered and never silently replaced.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            Text(when {
+                readyGloCount > 1 -> "More than one READY Glo SIM was detected. Choose the intended line manually; Gateway will not guess between Glo subscriptions."
+                readyGloCount == 1 -> "One READY Glo SIM is detected and will be selected automatically. You can still choose another SIM manually."
+                else -> "No READY Glo SIM is detected. Choose a SIM manually if you want to use another network, or insert/enable a Glo SIM."
+            }, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         } else {
             AuroraStatusPill("SELECTED • SIM ${selectedSim.slotIndex + 1}", if (selectedSim.ready) AuroraEmerald else AuroraCyan)
             Text("${selectedSim.carrierName} is selected${if (selectedSim.isGlobacom) " as the preferred Glo line" else " by manual override"}. If this subscription becomes unavailable, Gateway SMS work must pause; the phone's default Messaging-app SIM is never used as a fallback.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
