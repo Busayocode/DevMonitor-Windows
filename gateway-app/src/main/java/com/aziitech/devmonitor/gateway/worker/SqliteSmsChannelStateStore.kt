@@ -8,17 +8,16 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
 
-enum class GatewayJobState { CLAIMED, RUNNING, SUCCEEDED, FAILED, CANCELLED, LEASE_EXPIRED }
-enum class GatewayAttemptState { RESERVED, SENDING, SENT, AWAITING_REPLY, SUCCEEDED, FAILED, TIMED_OUT, ABANDONED }
+enum class GatewayJobState { QUEUED, RETRY_PENDING, LEASED, SENDING, AWAITING_REPLY, AMBIGUOUS, COMPLETED, FAILED, CANCELLED }
+enum class GatewayAttemptState { LEASED, SENDING, AWAITING_REPLY, COMPLETED, SEND_FAILED, TIMED_OUT, AMBIGUOUS, REJECTED }
 
 data class GatewayJobRecord(
     val jobId: String,
-    val tenantId: String,
-    val clientId: String,
     val gatewayId: String,
-    val leaseId: String,
+    val canonicalDeviceId: String,
+    val queryProfile: String,
+    val attemptNumber: Int,
     val leaseExpiresAt: String,
-    val payloadJson: String,
     val state: GatewayJobState,
     val updatedAt: String
 )
@@ -30,6 +29,8 @@ data class GatewayAttemptRecord(
     val state: GatewayAttemptState,
     val createdAt: String,
     val updatedAt: String,
+    val gatewayId: String,
+    val leaseExpiresAt: String,
     val transactionId: String? = null,
     val sendStartedAt: String? = null,
     val sentAt: String? = null,
@@ -84,8 +85,8 @@ class SqliteSmsChannelStateStore(context: Context) : SmsChannelStateStore {
     /** Atomically stores a controller job claim and its first attempt. */
     @Synchronized
     fun saveClaim(job: GatewayJobRecord, attempt: GatewayAttemptRecord) {
-        require(job.jobId.isNotBlank() && job.leaseId.isNotBlank() && job.gatewayId.isNotBlank())
-        require(attempt.attemptId.isNotBlank() && attempt.jobId == job.jobId && attempt.attemptNumber > 0)
+        require(job.jobId.isNotBlank() && job.gatewayId.isNotBlank() && job.canonicalDeviceId.isNotBlank())
+        require(attempt.attemptId.isNotBlank() && attempt.jobId == job.jobId && attempt.gatewayId == job.gatewayId && attempt.attemptNumber == job.attemptNumber && attempt.attemptNumber > 0)
         val db = helper.writableDatabase
         db.beginTransaction()
         try {
@@ -154,18 +155,17 @@ class SqliteSmsChannelStateStore(context: Context) : SmsChannelStateStore {
     }
 
     private fun encodeJob(r: GatewayJobRecord): String = JSONObject()
-        .put("jobId", r.jobId).put("tenantId", r.tenantId).put("clientId", r.clientId)
-        .put("gatewayId", r.gatewayId).put("leaseId", r.leaseId)
-        .put("leaseExpiresAt", r.leaseExpiresAt).put("payloadJson", r.payloadJson)
+        .put("jobId", r.jobId).put("gatewayId", r.gatewayId)
+        .put("canonicalDeviceId", r.canonicalDeviceId).put("queryProfile", r.queryProfile)
+        .put("attemptNumber", r.attemptNumber).put("leaseExpiresAt", r.leaseExpiresAt)
         .put("state", r.state.name).put("updatedAt", r.updatedAt).toString()
 
     private fun decodeJob(raw: String): GatewayJobRecord {
         val j = JSONObject(raw)
         return GatewayJobRecord(
-            j.getString("jobId"), j.getString("tenantId"), j.getString("clientId"),
-            j.getString("gatewayId"), j.getString("leaseId"), j.getString("leaseExpiresAt"),
-            j.getString("payloadJson"), GatewayJobState.valueOf(j.getString("state")),
-            j.getString("updatedAt")
+            j.getString("jobId"), j.getString("gatewayId"), j.getString("canonicalDeviceId"),
+            j.getString("queryProfile"), j.getInt("attemptNumber"), j.getString("leaseExpiresAt"),
+            GatewayJobState.valueOf(j.getString("state")), j.getString("updatedAt")
         )
     }
 
@@ -173,6 +173,7 @@ class SqliteSmsChannelStateStore(context: Context) : SmsChannelStateStore {
         .put("attemptId", r.attemptId).put("jobId", r.jobId)
         .put("attemptNumber", r.attemptNumber).put("state", r.state.name)
         .put("createdAt", r.createdAt).put("updatedAt", r.updatedAt)
+        .put("gatewayId", r.gatewayId).put("leaseExpiresAt", r.leaseExpiresAt)
         .put("transactionId", r.transactionId ?: JSONObject.NULL)
         .put("sendStartedAt", r.sendStartedAt ?: JSONObject.NULL)
         .put("sentAt", r.sentAt ?: JSONObject.NULL)
@@ -189,6 +190,7 @@ class SqliteSmsChannelStateStore(context: Context) : SmsChannelStateStore {
             attemptNumber = j.getInt("attemptNumber"),
             state = GatewayAttemptState.valueOf(j.getString("state")),
             createdAt = j.getString("createdAt"), updatedAt = j.getString("updatedAt"),
+            gatewayId = j.getString("gatewayId"), leaseExpiresAt = j.getString("leaseExpiresAt"),
             transactionId = j.nullable("transactionId"), sendStartedAt = j.nullable("sendStartedAt"),
             sentAt = j.nullable("sentAt"), responseDeadline = j.nullable("responseDeadline"),
             completedAt = j.nullable("completedAt"), errorCode = j.nullable("errorCode"),
