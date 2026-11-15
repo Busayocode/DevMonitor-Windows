@@ -23,6 +23,10 @@
                 android:value="User-started dedicated SMS Gateway worker that maintains its controller heartbeat and, in a later validated stage, relays assigned service SMS responses." />
         </service>
         <receiver
+            android:name=".worker.GatewaySmsSendResultReceiver"
+            android:enabled="true"
+            android:exported="false" />
+        <receiver
             android:name=".GatewaySmsReceiver"
             android:enabled="true"
             android:exported="true"
