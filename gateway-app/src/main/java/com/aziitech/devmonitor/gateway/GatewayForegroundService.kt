@@ -1,0 +1,251 @@
+package com.aziitech.devmonitor.gateway
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Build
+import android.os.IBinder
+import com.aziitech.devmonitor.gateway.worker.AndroidGatewayCredentialStore
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+/**
+ * User-started Gateway heartbeat service foundation.
+ *
+ * This stage deliberately does not claim jobs or send/receive SMS. The service
+ * keeps the registered phone's health heartbeat visible while the operator has
+ * explicitly started it. It is not restarted automatically after reboot.
+ */
+class GatewayForegroundService : Service() {
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var heartbeatJob: Job? = null
+    private lateinit var credentials: AndroidGatewayCredentialStore
+
+    override fun onCreate() {
+        super.onCreate()
+        credentials = AndroidGatewayCredentialStore(applicationContext)
+        createNotificationChannel()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action ?: ACTION_START) {
+            ACTION_START, ACTION_RESUME -> {
+                enterForeground()
+                startHeartbeatLoop()
+            }
+            ACTION_PAUSE -> {
+                enterForeground()
+                heartbeatJob?.cancel()
+                heartbeatJob = null
+                saveState(STATE_PAUSED)
+                updateNotification("Paused by operator. No SMS activity is enabled.")
+            }
+            ACTION_STOP -> stopWorker()
+            else -> {
+                enterForeground()
+                updateNotification("Unknown command. Heartbeat is not running.")
+            }
+        }
+        return START_NOT_STICKY
+    }
+
+    private fun enterForeground() {
+        val notification = buildNotification("Starting controller heartbeat…", paused = false)
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun startHeartbeatLoop() {
+        if (heartbeatJob?.isActive == true) return
+        heartbeatJob = serviceScope.launch {
+            val prefs = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+            val baseUrl = prefs.getString(KEY_CONTROLLER_URL, "").orEmpty().trim()
+            val credential = runCatching { credentials.load() }.getOrNull()
+            if (!baseUrl.startsWith("https://", ignoreCase = true) || credential == null) {
+                saveState("SETUP_REQUIRED")
+                updateNotification("Setup required. Register this phone and configure HTTPS.")
+                stopSelf()
+                return@launch
+            }
+
+            saveState(STATE_RUNNING)
+            while (isActive) {
+                try {
+                    val client = GatewayWorkerControllerClient(
+                        baseUrl = baseUrl,
+                        gatewayTokenProvider = {
+                            credentials.load()?.gatewayToken
+                                ?: throw IllegalStateException("Gateway credential is unavailable")
+                        }
+                    )
+                    val heartbeat = client.heartbeat(
+                        appVersion = BuildConfig.VERSION_NAME,
+                        smsPermissionReady = false,
+                        telephonyReady = false,
+                        networkReady = hasValidatedNetwork()
+                    )
+                    saveState(STATE_RUNNING)
+                    updateNotification(
+                        "Controller heartbeat acknowledged (${heartbeat.healthState}). SMS processing is disabled."
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    saveState(STATE_RUNNING)
+                    updateNotification(
+                        "Controller unavailable; retrying. SMS processing is disabled."
+                    )
+                }
+                delay(HEARTBEAT_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun hasValidatedNetwork(): Boolean {
+        val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = manager.activeNetwork ?: return false
+        val capabilities = manager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    private fun stopWorker() {
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+        saveState(STATE_STOPPED)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    private fun saveState(state: String) {
+        getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
+            .putString(KEY_WORKER_STATE, state)
+            .apply()
+    }
+
+    private fun updateNotification(message: String) {
+        val paused = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+            .getString(KEY_WORKER_STATE, STATE_STOPPED) == STATE_PAUSED
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, buildNotification(message, paused))
+    }
+
+    private fun buildNotification(message: String, paused: Boolean): Notification {
+        val openApp = PendingIntent.getActivity(
+            this,
+            REQUEST_OPEN_APP,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val pauseOrResumeAction = if (paused) ACTION_RESUME else ACTION_PAUSE
+        val pauseOrResumeLabel = if (paused) "Resume" else "Pause"
+        return notificationBuilder()
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setContentTitle("DevMonitor Gateway")
+            .setContentText(message)
+            .setStyle(Notification.BigTextStyle().bigText(message))
+            .setContentIntent(openApp)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .setPriority(Notification.PRIORITY_LOW)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .addAction(
+                0,
+                pauseOrResumeLabel,
+                servicePendingIntent(pauseOrResumeAction, REQUEST_TOGGLE)
+            )
+            .addAction(
+                0,
+                "Stop",
+                servicePendingIntent(ACTION_STOP, REQUEST_STOP)
+            )
+            .build()
+    }
+
+    private fun notificationBuilder(): Notification.Builder =
+        if (Build.VERSION.SDK_INT >= 26) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+
+    private fun servicePendingIntent(action: String, requestCode: Int): PendingIntent {
+        val intent = Intent(this, GatewayForegroundService::class.java).setAction(action)
+        return PendingIntent.getService(
+            this,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Gateway worker status",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Persistent status and operator controls for the Gateway phone."
+                setShowBadge(false)
+            }
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        heartbeatJob?.cancel()
+        serviceScope.cancel()
+        saveState(STATE_STOPPED)
+        super.onDestroy()
+    }
+
+    companion object {
+        const val ACTION_START = "com.aziitech.devmonitor.gateway.action.START"
+        const val ACTION_PAUSE = "com.aziitech.devmonitor.gateway.action.PAUSE"
+        const val ACTION_RESUME = "com.aziitech.devmonitor.gateway.action.RESUME"
+        const val ACTION_STOP = "com.aziitech.devmonitor.gateway.action.STOP"
+
+        const val PREFERENCES = "devmonitor_gateway_runtime"
+        const val KEY_CONTROLLER_URL = "controller_base_url"
+        private const val KEY_WORKER_STATE = "worker_state"
+        private const val CHANNEL_ID = "gateway_worker_status"
+        private const val NOTIFICATION_ID = 5300
+        private const val REQUEST_OPEN_APP = 5301
+        private const val REQUEST_TOGGLE = 5302
+        private const val REQUEST_STOP = 5303
+        private const val HEARTBEAT_INTERVAL_MS = 60_000L
+
+        const val STATE_RUNNING = "RUNNING"
+        const val STATE_PAUSED = "PAUSED"
+        const val STATE_STOPPED = "STOPPED"
+
+        fun readState(context: Context): String =
+            context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getString(KEY_WORKER_STATE, STATE_STOPPED) ?: STATE_STOPPED
+    }
+}
