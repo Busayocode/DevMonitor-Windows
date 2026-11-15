@@ -24,6 +24,7 @@ on:
       - "docs/**"
       - "DEV_MONITOR_5.0_MASTER_SHEET.md"
       - "gateway-auth-android/**"
+      - "gateway-worker-core/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle.properties"
