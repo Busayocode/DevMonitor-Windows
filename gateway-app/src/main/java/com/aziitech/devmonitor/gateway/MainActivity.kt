@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,6 +37,7 @@ class MainActivity : ComponentActivity() {
     private var busy by mutableStateOf(false)
     private var signedIn by mutableStateOf(false)
     private var workerState by mutableStateOf("STOPPED")
+    private var batteryOptimizationIgnored by mutableStateOf(false)
     private val firebaseTokens by lazy { FirebaseAuthIdTokenProvider() }
     private val credentialStore by lazy { AndroidGatewayCredentialStore(applicationContext) }
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -122,6 +125,8 @@ class MainActivity : ComponentActivity() {
                     gatewayId = gatewayId,
                     busy = busy,
                     workerState = workerState,
+                    batteryOptimizationIgnored = batteryOptimizationIgnored,
+                    onOpenBatterySettings = { openBatteryOptimizationSettings() },
                     onStartWorker = { requestGatewayWorkerStart() },
                     onStopWorker = { stopGatewayWorker() },
                     onControllerUrlChange = {
@@ -167,6 +172,21 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         workerState = GatewayForegroundService.readState(this)
+        refreshBatteryOptimizationStatus()
+    }
+
+    private fun refreshBatteryOptimizationStatus() {
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        batteryOptimizationIgnored = powerManager.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun openBatteryOptimizationSettings() {
+        runCatching {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            status = "Android battery-optimization settings opened. Find DevMonitor Gateway and choose the appropriate unrestricted or not-optimized option if you approve."
+        }.onFailure {
+            status = "Android could not open battery-optimization settings. Open Settings and search for Battery optimization or App battery usage."
+        }
     }
 
     private fun requestGatewayWorkerStart() {
