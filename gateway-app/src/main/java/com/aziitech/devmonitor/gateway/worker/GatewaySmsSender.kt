@@ -87,12 +87,8 @@ class GatewaySmsSender(private val context: Context) {
         }
 
         val manager = runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                SmsManager.createForSubscriptionId(selectedSubscriptionId)
-            } else {
-                @Suppress("DEPRECATION")
-                SmsManager.getSmsManagerForSubscriptionId(selectedSubscriptionId)
-            }
+            @Suppress("DEPRECATION")
+            SmsManager.getSmsManagerForSubscriptionId(selectedSubscriptionId)
         }.getOrElse {
             return GatewaySmsDispatchResult.Blocked("Could not create an SMS manager for the selected SIM")
         }
