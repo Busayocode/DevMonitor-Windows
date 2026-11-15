@@ -95,3 +95,10 @@ The API must verify tenant membership and active device access before reading `d
 GitHub Actions run [#32](https://github.com/Busayocode/DevMonitor-Windows/actions/runs/43428315334) passed end-to-end CI: V001–V008 applied to PostgreSQL 16; SQL smoke tests covered personal priority, reservation, tenant and same-tenant requester fairness, stale-cache protection, lease recovery and operator quarantine release; OpenAPI YAML validated; FastAPI service compiled and helper tests passed; Kotlin scheduler compiled and smoke tests passed. CI uses disposable services, not a provisioned production database. Cross-process contention/load tests, real identity-provider verification, full process-restart recovery and live phone tests remain required.
 
 The OpenAPI contract and reference FastAPI handlers are now implemented in source. The next step is production hardening and deployment configuration after the identity provider and hosting provider are selected. No hosting provider or cost has been approved or provisioned.
+
+
+## Implementation update — 15 November 2026
+
+The controller has advanced beyond the initial V001–V008 description above. The current foundation branch contains migrations **V001–V013**, including request-level multi-Gateway scheduling, queue visibility/cancellation/analytics, heartbeat failover and Gateway health-transition audit. The current API/service implementation and validation status are tracked in `docs/DevMonitor-5.0-Phase-3-Controller-Foundation.md`.
+
+Do not use the older V001–V008 list in this README as the current complete migration inventory. Apply V001–V013 in order to a clean, dedicated test database when performing the next validation. This remains an undeployed reference implementation; no production database or paid hosting has been provisioned.
