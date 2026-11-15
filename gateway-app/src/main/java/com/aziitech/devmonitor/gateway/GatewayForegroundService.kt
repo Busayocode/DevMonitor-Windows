@@ -82,7 +82,7 @@ class GatewayForegroundService : Service() {
             val prefs = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
             val baseUrl = prefs.getString(KEY_CONTROLLER_URL, "").orEmpty().trim()
             val credential = runCatching { credentials.load() }.getOrNull()
-            if (!baseUrl.startsWith("https://", ignoreCase = true) || credential == null) {
+            if (!baseUrl.startsWith("https://", ignoreCase = true) || credential == null || credential.controllerBaseUrl != baseUrl) {
                 saveState("SETUP_REQUIRED")
                 updateNotification("Setup required. Register this phone and configure HTTPS.")
                 stopSelf()
@@ -135,7 +135,12 @@ class GatewayForegroundService : Service() {
         heartbeatJob = null
         saveState(STATE_STOPPED)
         if (Build.VERSION.SDK_INT >= 24) {
+            if (Build.VERSION.SDK_INT >= 24) {
             stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
         } else {
             @Suppress("DEPRECATION")
             stopForeground(true)
@@ -253,8 +258,21 @@ class GatewayForegroundService : Service() {
         const val STATE_PAUSED = "PAUSED"
         const val STATE_STOPPED = "STOPPED"
 
-        fun readState(context: Context): String =
-            context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        fun readState(context: Context): String {
+            val saved = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 .getString(KEY_WORKER_STATE, STATE_STOPPED) ?: STATE_STOPPED
+            if (saved == STATE_RUNNING || saved == STATE_PAUSED) {
+                @Suppress("DEPRECATION")
+                val running = (context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager)
+                    .getRunningServices(Int.MAX_VALUE)
+                    .any { it.service.className == GatewayForegroundService::class.java.name }
+                if (!running) {
+                    context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+                        .putString(KEY_WORKER_STATE, STATE_STOPPED).apply()
+                    return STATE_STOPPED
+                }
+            }
+            return saved
+        }
     }
 }
