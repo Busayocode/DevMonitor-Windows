@@ -19,7 +19,7 @@ import java.io.IOException
 import java.time.Instant
 import java.util.UUID
 
-data class RegisteredGateway(val gatewayId: String)
+data class RegisteredGateway(val gatewayId: String, val controllerBaseUrl: String)
 
 data class GatewayHeartbeatState(val gatewayId: String, val healthState: String)
 
@@ -76,8 +76,8 @@ class GatewayWorkerControllerClient(
         val gatewayId = response.getString("gateway_id").also(::requireUuid)
         val gatewayToken = response.getString("gateway_token")
         require(gatewayToken.length >= 32) { "Controller returned an invalid Gateway credential" }
-        credentialStore.save(gatewayId, gatewayToken)
-        RegisteredGateway(gatewayId)
+        credentialStore.save(gatewayId, gatewayToken, root.toString())
+        RegisteredGateway(gatewayId, root.toString())
     }
 
     /** Report real phone readiness; do not claim SMS readiness until Android permissions/SIM checks exist. */
