@@ -50,6 +50,16 @@ class GatewaySmsTransactionGateTest {
         assertEquals(SmsChannelState.IDLE, g.state(t0.plusSeconds(122)))
     }
 
+    @Test fun explicitSafetyQuarantineBlocksNewWorkUntilOperatorResolution() {
+        val g = gate()
+        begin(g)
+        g.quarantine("Android rejected SMS submission")
+        assertEquals(SmsChannelState.QUARANTINED, g.state(t0.plusSeconds(1)))
+        assertThrows(IllegalStateException::class.java) { begin(g, "tx-2") }
+        g.resolveQuarantineByOperator("operator-1", "verified no SMS was sent; inbox reviewed", true)
+        assertEquals(SmsChannelState.IDLE, g.state(t0.plusSeconds(2)))
+    }
+
     @Test fun duplicateAndUnsolicitedMessagesAreNeverAssigned() {
         val g = gate()
         assertTrue(g.on3030Message("sms-0", t0, "orphan") is InboundSmsDecision.Unassigned)
