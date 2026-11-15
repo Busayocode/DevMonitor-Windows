@@ -1,7 +1,7 @@
 # Gateway Worker Core — Phase 4A
 
 **Branch:** `devmonitor-5.0-gateway-android-download`  
-**Status:** Implemented as a pure Kotlin transaction-safety module; GitHub CI passed in run [#43682711793](https://github.com/Busayocode/DevMonitor-Windows/actions/runs/43682711793). Not yet an Android SMS service and not connected to a live controller or SIM.
+**Status:** Pure Kotlin transaction-safety module plus Android SQLite persistence, guarded 3030 intake/parser, subscription-pinned sender and SMS_SENT callback are now present. Gateway workflow #117 passed Android build and source packaging on 15 Nov 2026. The foreground service remains heartbeat-only; no live controller-authorized SMS execution or physical SIM test has been completed.
 
 ## Why this is the first worker slice
 
@@ -31,9 +31,9 @@ The real 3030 reply does not echo the queried device/partner code. Therefore the
 
 ## Next worker steps
 
-1. Run and pass this module's unit tests in GitHub Actions.
-2. Implement a durable Android persistence adapter and process-restart tests.
-3. Build a dedicated worker application target with its own Firebase registration and package ID.
-4. Verify Android 14+ foreground-service type, notification and boot-start rules for the chosen distribution channel.
-5. Add SMS sender validation/receiver and SIM readiness, then controlled transmission only after a test controller and user-approved test SIM are ready.
-6. Connect worker registration/heartbeat/claim/result endpoints using revocable installation credentials.
+1. Add deterministic tests for the Android SQLite state adapter and callback transitions, including duplicate/stale callbacks and process restart.
+2. Implement a controller-aware worker coordinator: server-accepted SENDING, local durable state, selected-SIM revalidation, attempt-specific SMS_SENT callback and exactly one send.
+3. Reconcile local callback outcomes with the real controller contract; do not assume a send-failed endpoint exists.
+4. Restore the durable transaction gate and inbox before processing any post-restart 3030 message.
+5. Set a measured response timeout and post-reply quiet period from real carrier evidence; test fixtures are not production settings.
+6. Complete controlled physical-device tests with an approved SIM and redacted real 3030 samples before enabling queue execution.
