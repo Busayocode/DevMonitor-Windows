@@ -296,3 +296,5 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - SIMs not reporting READY are visible but disabled in the selector. A selected SIM is accepted only while it remains present and READY.
 - This is selection and readiness groundwork only. The selected subscription is not yet passed to SmsManager, no SMS is sent or received, and controller heartbeat readiness remains false. Before enabling SMS, the sender must revalidate the selected subscription immediately before every send and pause rather than fall back if it is unavailable.
 - Physical-device validation still required on single-SIM, dual-SIM and multi-SIM devices, including SIM swap/removal, disabled SIM, locked SIM, reboot and subscription-ID changes.
+
+- CI verification note: the first SIM-selector APK compile exposed a missing Compose `mutableStateOf` import in `GatewayHomeScreen.kt`; this was corrected in commit `0575912`. A fresh build is required before treating this milestone as build-verified.
