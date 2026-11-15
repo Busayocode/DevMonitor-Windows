@@ -209,3 +209,15 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - Controller claim contract confirmed against the foundation branch: `POST /v1/gateway/jobs/claim` returns a `job` object with `job_id`, `attempt_id`, `lease_token`, `canonical_device_id`, `query_profile`, `attempt_number`, and `lease_expires_at`. The existing reference API also defines `/sending`, `/awaiting-reply`, `/result`, `/send-failed`, `/ambiguous`, heartbeat and active-attempt recovery.
 - Next implementation: build an authenticated worker transport around these exact routes; after claim, persist job+attempt atomically and persist the lease token in Android Keystore before acknowledging work locally. Do not start SMS transmission until the server has accepted the SENDING transition.
 - The latest complete Android build run for the job-ledger and Keystore changes is still queued/pending at the time of this update. No APK build success is claimed for these newest changes.
+
+
+## 14. Authenticated Gateway worker transport — first integration slice
+
+- Added `GatewayWorkerControllerClient.kt` using the dedicated opaque Gateway bearer credential over HTTPS; it does not reuse Firebase user-token signing.
+- Implemented the exact reference-controller `POST /v1/gateway/jobs/claim` contract, including its nested `job` response and returned job/attempt/device/profile/lease-expiry fields.
+- A successful claim stores the raw lease token in `AndroidGatewayLeaseTokenStore` (Android Keystore AES-GCM encryption) and atomically stores the job + attempt in SQLite. The token is not copied into the SQLite record or returned in the claimed-work model.
+- Implemented server-acknowledged state operations for `/sending`, `/awaiting-reply`, `/ambiguous` and `/result`. Local lifecycle state is updated only after the controller accepts the transition.
+- Result submission is bound to the job, attempt and lease token; on accepted completion the local records are marked COMPLETED and the encrypted lease token is removed.
+- This is a transport/integration slice only. No SMS is transmitted by this client. The caller must still wait for a successful SENDING acknowledgement and the dedicated worker service must enforce transaction-safety rules before any future SMS operation.
+- Still required: real controller integration tests, active-attempt restart recovery, heartbeat, definitive pre-send failure response reconciliation, controller registration/credential provisioning, and wiring to a foreground worker service.
+- Latest Gateway CI run for this code: [#43696953884](https://github.com/Busayocode/DevMonitor-Windows/actions/runs/43696953884). Source packaging succeeded; APK compilation is still in progress as last checked.
