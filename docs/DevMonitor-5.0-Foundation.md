@@ -106,3 +106,16 @@ For dedicated gateway phones, the app will check Android battery-optimisation st
 Ordinary Gateway Edition clients do not need battery-optimisation exemption. They submit requests and receive results; they are not expected to remain continuously active as workers.
 
 Foreground-service type selection, Android 14+ permissions, newer Android boot/start restrictions and distribution-policy eligibility must be verified against the final merged manifest and release target before implementation is considered complete. A force-stopped app, revoked permission, OEM task killer or lost network may still interrupt a gateway; durable leases, idempotency and recovery remain mandatory.
+
+
+## 9. Implementation status update — 15 November 2026
+
+The original “implementation not yet started” status above is superseded. Gateway implementation has started on isolated development branches; the project is still not release-ready.
+
+- Phase 1 source/protocol audit is documented against the v340 Android source snapshot. The supplied real 3030 reply evidence confirms that the reply body does not echo the queried device or partner code. A timed-out phone therefore has an ambiguous SMS channel and must be quarantined; late/unsolicited replies must not be attached to the next job.
+- Phase 2B has an isolated Kotlin reference scheduler with smoke tests for daily cache, idempotency, leases, ambiguity quarantine, personal-gateway priority and fair scheduling. It is not integrated into either release edition.
+- Phase 3 has PostgreSQL migrations V001–V013, an OpenAPI contract and a reference FastAPI controller service. The controller CI validation is recorded as passing in workflow run #43511984083. It is source/CI validated, not deployed; cross-process, restart-recovery and live identity tests remain outstanding.
+- The separate Android authentication/client prototype lives on `devmonitor-5.0-gateway-android-download`. Its GitHub Actions run #43681725883 succeeded on 15 November 2026, including Firebase package-config verification, unit tests, APK build and artifact upload. This is not the dedicated SMS worker.
+- The detailed, current checklist is `docs/DevMonitor-5.0-Master-Development-Sheet.md`.
+
+The Full edition and main branch remain outside this work. No SMS was sent by the CI build, no controller has been deployed, and no paid infrastructure has been provisioned.
