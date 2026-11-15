@@ -221,3 +221,15 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - This is a transport/integration slice only. No SMS is transmitted by this client. The caller must still wait for a successful SENDING acknowledgement and the dedicated worker service must enforce transaction-safety rules before any future SMS operation.
 - Still required: real controller integration tests, active-attempt restart recovery, heartbeat, definitive pre-send failure response reconciliation, controller registration/credential provisioning, and wiring to a foreground worker service.
 - Latest Gateway CI run for this code: [#43696953884](https://github.com/Busayocode/DevMonitor-Windows/actions/runs/43696953884). Source packaging succeeded; APK compilation is still in progress as last checked.
+
+## 15. Gateway registration, health heartbeat and restart reconciliation — implementation slice
+
+- Added an Android Keystore-backed AndroidGatewayCredentialStore. The Gateway's opaque bearer credential is encrypted with AES-256-GCM and is not stored in plaintext preferences, SQLite or logs.
+- Added the exact reference-controller registration call: signed-in Firebase user token -> POST /v1/client/gateways with display_name; the returned gateway_id and one-time gateway_token are stored encrypted locally.
+- Added the Gateway-authenticated POST /v1/gateway/heartbeat request using the controller's exact fields: app version, SMS permission readiness, telephony readiness, network readiness and optional last successful 3030 timestamp.
+- Added GET /v1/gateway/active-attempt recovery inspection. The controller intentionally does not return a lease token. The client reports whether the matching encrypted local lease token still exists; it must not fabricate or reacquire a missing token. Missing token means safe server-side expiry/reconciliation and operator visibility are required.
+- Strengthened atomic SQLite job/attempt updates: matching job ID, Gateway ID, attempt number and lease expiry are now required before a paired lifecycle update is accepted.
+- Moved blocking SQLite and Android Keystore operations in the suspend transport methods onto Dispatchers.IO.
+- Implemented transport and secure storage only. The registration screen/onboarding, persisted credential-provider wiring, periodic heartbeat scheduler, active-attempt state reconciliation UI, and foreground worker service remain outstanding.
+- SMS readiness must remain false until runtime permission and SIM/subscription readiness checks are actually implemented. No SMS send/receive capability is implied by these APIs.
+- CI must validate the complete integrated Android build before this slice is considered CI validated. No physical-device or live-controller test is implied.
