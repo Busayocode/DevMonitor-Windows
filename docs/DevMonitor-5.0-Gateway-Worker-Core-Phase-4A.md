@@ -37,3 +37,10 @@ The real 3030 reply does not echo the queried device/partner code. Therefore the
 4. Restore the durable transaction gate and inbox before processing any post-restart 3030 message.
 5. Set a measured response timeout and post-reply quiet period from real carrier evidence; test fixtures are not production settings.
 6. Complete controlled physical-device tests with an approved SIM and redacted real 3030 samples before enabling queue execution.
+
+
+## Controller-authorised dispatch coordinator — 15 Nov 2026
+
+The Android app now contains an explicit `GatewaySmsDispatchCoordinator` that sequences the existing server `SENDING` transition, durable local attempt metadata, one-at-a-time transaction gate, explicit selected-SIM SMS submission and attempt-specific callback. It also exposes restart-replay reconciliation for locally persisted SMS_SENT success/failure outcomes, using only the controller's existing `awaiting-reply` and `ambiguous` transitions.
+
+The transaction gate now has an explicit safety-quarantine operation, covered by a unit test. The coordinator remains a callable foundation only: the foreground service is still heartbeat-only, does not claim jobs, and does not invoke this coordinator. Callback reconciliation, complete process-death recovery, parsing-to-controller result submission, and physical SIM/3030 tests remain outstanding. No production timeout or drain duration has been selected.
