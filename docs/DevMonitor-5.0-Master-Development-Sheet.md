@@ -149,7 +149,7 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 
 ## 9. Controller identity hardening — 15 November 2026
 
-**Implemented in source; CI validation pending.**
+**Implemented in source; CI validated on 15 November 2026 (run #139).**
 
 - Firebase Authentication ID-token validation now explicitly rejects authentication timestamps that are in the future relative to token issuance or the controller clock (with a 60-second clock-skew allowance).
 - Authentication time and issued-at claims must be integer timestamps; boolean values are rejected even though Python treats booleans as integers.
@@ -158,4 +158,18 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - No Firebase project settings, production credentials, database instances or paid infrastructure were changed.
 - No SMS sending or receiving was enabled by this controller-only change.
 
-**Next validation:** GitHub Actions must pass the controller suite, including PostgreSQL migrations, cache/history isolation and concurrent claim tests. This is CI evidence only; live Firebase identity-provider integration and real phone sign-in remain outstanding.
+**Validation result:** GitHub Actions run #139 passed the complete controller workflow, including PostgreSQL migrations, cache/history isolation and concurrent claim tests. This is CI evidence only; live Firebase identity-provider integration and real phone sign-in remain outstanding.
+
+
+## 10. Gateway installation credential authentication tests — 15 November 2026
+
+**Added to source; CI validation pending.**
+
+- Added focused tests for the dedicated Gateway installation bearer credential.
+- A valid 256-bit hexadecimal credential is converted to its SHA-256 digest before the database lookup; the test verifies the plaintext credential is not used as the lookup value.
+- Unknown or revoked credentials are rejected with HTTP 401.
+- Malformed hexadecimal and incorrectly sized credentials are rejected before any database lookup.
+- These tests exercise the controller's gateway-authentication function with controlled database doubles; they do not claim a live PostgreSQL or deployed-controller authentication test.
+- No credential, Firebase setting, deployment, SMS permission or SMS operation was enabled.
+
+**Next:** verify the new tests in GitHub Actions, then extend the same controlled integration coverage to user-token authentication/dependency handling and tenant-scoped request authorization.
