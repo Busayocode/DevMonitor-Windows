@@ -274,3 +274,15 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - The operator must choose the app and approve any change inside Android Settings. The app does not request the restricted direct-exemption permission and does not silently change device settings.
 - The UI explains that exemption from standard Android battery optimisation does not guarantee immunity from OEM background limits, Doze edge cases, force-stop or network loss.
 - Physical-device verification and manufacturer-specific guidance remain pending. Heartbeat-only operation remains unchanged; no SMS permission, job claiming or SMS processing is enabled.
+
+
+## 18. SMS permission and SIM-readiness foundation — 15 Nov 2026
+
+- Added optional telephony hardware declaration so the app can still install on devices without a modem; a Gateway phone without a usable SIM cannot become an SMS worker.
+- Declared Android SEND_SMS, RECEIVE_SMS and READ_PHONE_STATE permissions for the dedicated Gateway role. No READ_SMS permission was added.
+- Added an explicit operator action on the Gateway phone screen to request only missing runtime permissions. The app does not prompt on first launch or automatically request permissions when starting the heartbeat service.
+- Added live permission status and active subscription/SIM state checks. On multi-SIM Android devices, each active subscription is checked for SIM_STATE_READY; on API 23 the available single-SIM state is checked.
+- Denials and missing/locked SIMs are surfaced as not-ready states. Permission grant alone does not mark a SIM ready.
+- IMPORTANT BOUNDARY: this is readiness discovery only. No SMS sender, receiver, inbox access, sender verification, message correlation or transaction execution is implemented. The controller heartbeat deliberately continues reporting sms_permission_ready=false and telephony_ready=false until the complete SMS transport is implemented and validated.
+- SMS permissions are restricted/sensitive in distribution policy. Before any public Play release, verify current Google Play SMS/Call Log policy and declaration eligibility for the app's core dedicated Gateway use case. This branch is not being promoted for public release at this stage.
+- Physical-device tests still required: permission grant/denial, no SIM, SIM absent/locked/ready, dual SIM, SIM removed while app is running, and permission revoked in Settings.
