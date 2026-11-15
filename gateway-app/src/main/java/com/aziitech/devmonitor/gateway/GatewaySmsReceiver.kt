@@ -36,7 +36,7 @@ class GatewaySmsReceiver : BroadcastReceiver() {
                 val ordered = parts.sortedBy { it.timestampMillis }
                 val body = ordered.joinToString(separator = "") { it.messageBody.orEmpty() }
                 if (body.isBlank()) return@forEach
-                val receivedAt = ordered.maxOfOrNull(SmsMessage::getTimestampMillis)
+                val receivedAt = ordered.maxOfOrNull { it.timestampMillis }
                     ?: System.currentTimeMillis()
                 runCatching {
                     store.record3030(sender, receivedAt, subscriptionId, body)
