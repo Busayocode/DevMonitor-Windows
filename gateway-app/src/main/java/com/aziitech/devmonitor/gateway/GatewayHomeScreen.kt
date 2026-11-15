@@ -1,5 +1,6 @@
 package com.aziitech.devmonitor.gateway
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aziitech.devmonitor.gateway.ui.AuroraBlue
@@ -83,7 +85,7 @@ fun GatewayHomeScreen(
                                 Modifier.background(Brush.linearGradient(listOf(AuroraBlue, AuroraCyan))),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("✦", color = Color.White, fontWeight = FontWeight.ExtraBold)
+                                Image(painter = painterResource(com.aziitech.devmonitor.gateway.R.drawable.devmonitor_icon), contentDescription = "DevMonitor", modifier = Modifier.size(30.dp))
                             }
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
