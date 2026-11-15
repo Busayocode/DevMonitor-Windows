@@ -6,6 +6,8 @@ on:
       - devmonitor-5.0-gateway-android-download
     paths:
       - "gateway-app/**"
+      - "docs/**"
+      - "DEV_MONITOR_5.0_MASTER_SHEET.md"
       - "gateway-auth-android/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
@@ -77,6 +79,21 @@ jobs:
             :gateway-auth-android:testDebugUnitTest \
             :gateway-auth-android:assembleDebug \
             :gateway-app:assembleDebug
+
+      - name: Package Gateway source ZIP with master sheet
+        run: |
+          zip -r DevMonitor-Gateway-5.0-Source.zip . \
+            -x ".git/*" "*/build/*" "*/.gradle/*" ".gradle/*" \
+               "local.properties" ".idea/*" "*/.idea/*" \
+               "DevMonitor-Gateway-5.0-Source.zip"
+
+      - name: Upload Gateway source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Gateway-5.0-Source
+          path: DevMonitor-Gateway-5.0-Source.zip
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload Gateway debug APK
         uses: actions/upload-artifact@v4
