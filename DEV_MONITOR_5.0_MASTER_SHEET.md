@@ -91,11 +91,11 @@ It does **not** prove live Google/Firebase sign-in, a successful request to a de
 - [ ] Verify personal work priority, fair shared-pool scheduling and owner-only access on real devices.
 
 ### F. Android availability and reliability
-- [ ] Implement a compliant foreground worker service (not an Activity-owned coroutine).
-- [ ] Add a persistent notification with truthful states and Pause/Resume/Stop controls.
+- [x] Add a user-started Android foreground-service foundation with persistent notification and Pause/Resume/Stop actions; it currently runs the heartbeat loop only (no SMS or job claiming).
+- [x] Add a persistent notification with truthful heartbeat-only state and Pause/Resume/Stop controls.
 - [x] Extend durable persistence from the SMS channel snapshot to controller job, attempt, lease and send lifecycle records (initial local schema/API implemented; CI and recovery tests pending).
 - [ ] Wire durable job/attempt transitions into the controller polling/claim client and the eventual foreground worker service.
-- [ ] Check Android 14+ foreground-service type/permission and boot-start restrictions.
+- [x] Review Android 14+ foreground-service type/permission requirements and Android 15 dataSync timeout/boot restrictions. `specialUse` is used provisionally for the long-running dedicated SMS Gateway relay; Google Play declaration/review remains pending. No BOOT_COMPLETED auto-start is declared.
 - [ ] Provide user-guided battery-optimization settings for dedicated worker phones only.
 - [ ] Test screen-off, Doze, Wi-Fi/mobile transitions, process kill, swipe-away, reboot and force-stop.
 - [ ] Never promise uninterrupted operation when Android/OEM restrictions prevent it.
@@ -250,3 +250,16 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - Implemented transport and secure storage only. The registration screen/onboarding, persisted credential-provider wiring, periodic heartbeat scheduler, active-attempt state reconciliation UI, and foreground worker service remain outstanding.
 - SMS readiness must remain false until runtime permission and SIM/subscription readiness checks are actually implemented. No SMS send/receive capability is implied by these APIs.
 - CI must validate the complete integrated Android build before this slice is considered CI validated. No physical-device or live-controller test is implied.
+
+
+## 16. Gateway heartbeat and foreground-service foundation — 15 Nov 2026
+
+- Added `GatewayForegroundService` as a dedicated Android Service, not an Activity-owned coroutine.
+- The service is started only by an explicit user action after the app has a registered Gateway identity and an HTTPS controller URL. It is not auto-started at boot.
+- Added a persistent low-priority notification with Pause, Resume and Stop actions, plus a notification tap target back into the Gateway app.
+- Added a controller heartbeat loop using the encrypted Gateway bearer credential. The heartbeat reports the app version, validated network readiness, and deliberately reports both SMS permission readiness and telephony readiness as **false** until those checks are implemented.
+- Added a Gateway phone screen with service status and Start/Stop controls. The persistent notification also exposes Pause/Resume/Stop while active.
+- Persisted the controller URL locally as non-secret configuration; the bearer credential remains encrypted by Android Keystore.
+- **Foreground-service classification:** Android 14+ requires a declared service type and corresponding permission. The app targets API 35, so `dataSync` is unsuitable for an always-on worker because Android 15 imposes a six-hour-per-24-hour limit and restricts boot-start. This prototype declares `specialUse` with a narrow subtype description for the dedicated user-started SMS Gateway relay. Google Play declaration/review is still required before Play distribution; this is not a policy approval claim.
+- No boot receiver, automatic battery-optimization exemption, SMS permissions, SMS send/receive, controller job claim, or job execution was added. The heartbeat cadence is currently 60 seconds and should be tuned against the deployed controller's operational limits before production.
+- CI validation and real-device notification/action/heartbeat tests remain pending.
