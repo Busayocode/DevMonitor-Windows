@@ -1,0 +1,31 @@
+name: Retrieve DevMonitor UI reference archive
+
+on:
+  push:
+    branches:
+      - devmonitor-5.0-gateway-android-download
+    paths:
+      - ".github/workflows/retrieve-main-ui-reference.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  collect-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download current Android reference ZIP
+        run: |
+          curl -fL --retry 3 \
+            "https://raw.githubusercontent.com/Busayocode/DevMonitor-Windows/development/DevMonitor-An-v337-4.7.0-TARGET-KOTLIN-RECHECK-CONTINUE-FIX.zip" \
+            -o DevMonitor-An-v337-reference.zip
+          unzip -t DevMonitor-An-v337-reference.zip
+          unzip -l DevMonitor-An-v337-reference.zip > archive-manifest.txt
+      - name: Upload reference archive for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Main-UI-Reference-v337
+          path: |
+            DevMonitor-An-v337-reference.zip
+            archive-manifest.txt
+          retention-days: 3
