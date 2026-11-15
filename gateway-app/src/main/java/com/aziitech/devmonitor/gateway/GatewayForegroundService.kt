@@ -135,12 +135,7 @@ class GatewayForegroundService : Service() {
         heartbeatJob = null
         saveState(STATE_STOPPED)
         if (Build.VERSION.SDK_INT >= 24) {
-            if (Build.VERSION.SDK_INT >= 24) {
             stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
-        }
         } else {
             @Suppress("DEPRECATION")
             stopForeground(true)
