@@ -2,6 +2,8 @@ package com.aziitech.devmonitor.gateway
 
 import android.os.Bundle
 import android.os.Build
+import android.content.Intent
+import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,8 +32,13 @@ class MainActivity : ComponentActivity() {
     private var gatewayId by mutableStateOf<String?>(null)
     private var busy by mutableStateOf(false)
     private var signedIn by mutableStateOf(false)
+    private var workerState by mutableStateOf("STOPPED")
     private val firebaseTokens by lazy { FirebaseAuthIdTokenProvider() }
     private val credentialStore by lazy { AndroidGatewayCredentialStore(applicationContext) }
+    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted) status = "Notification permission was not granted. Android may limit where the foreground notification appears; the worker will still show its status in system task controls."
+        launchGatewayWorkerService()
+    }
 
     private val signInLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -60,6 +67,9 @@ class MainActivity : ComponentActivity() {
                     FirebaseAuth.getInstance().signInWithCredential(credential).await()
                     firebaseTokens.getIdToken(forceRefresh = true)
                     signedIn = FirebaseAuth.getInstance().currentUser != null
+        controllerUrl = getSharedPreferences(GatewayForegroundService.PREFERENCES, MODE_PRIVATE)
+            .getString(GatewayForegroundService.KEY_CONTROLLER_URL, "").orEmpty()
+        workerState = GatewayForegroundService.readState(this)
                     status = "Google sign-in successful. Firebase identity is ready; its token is not displayed or stored."
                 } catch (error: Exception) {
                     status = "Firebase sign-in failed: ${error.localizedMessage ?: "Unknown error"}"
@@ -98,7 +108,14 @@ class MainActivity : ComponentActivity() {
                     gatewayDisplayName = gatewayDisplayName,
                     gatewayId = gatewayId,
                     busy = busy,
-                    onControllerUrlChange = { controllerUrl = it },
+                    workerState = workerState,
+                    onStartWorker = { requestGatewayWorkerStart() },
+                    onStopWorker = { stopGatewayWorker() },
+                    onControllerUrlChange = {
+                        controllerUrl = it
+                        getSharedPreferences(GatewayForegroundService.PREFERENCES, MODE_PRIVATE).edit()
+                            .putString(GatewayForegroundService.KEY_CONTROLLER_URL, it.trim()).apply()
+                    },
                     onGatewayDisplayNameChange = { gatewayDisplayName = it.take(80) },
                     onSignIn = { beginGoogleSignIn() },
                     onVerifyToken = { verifyFirebaseToken() },
@@ -107,6 +124,43 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        workerState = GatewayForegroundService.readState(this)
+    }
+
+    private fun requestGatewayWorkerStart() {
+        if (gatewayId == null) {
+            status = "Register this phone with the controller before starting its heartbeat service."
+            return
+        }
+        if (!controllerUrl.trim().startsWith("https://", ignoreCase = true)) {
+            status = "Enter the approved HTTPS controller URL before starting the Gateway service."
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            launchGatewayWorkerService()
+        }
+    }
+
+    private fun launchGatewayWorkerService() {
+        val intent = Intent(this, GatewayForegroundService::class.java)
+            .setAction(GatewayForegroundService.ACTION_START)
+        workerState = "STARTING"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+        status = "Gateway heartbeat service requested. SMS sending and receiving remain disabled."
+    }
+
+    private fun stopGatewayWorker() {
+        stopService(Intent(this, GatewayForegroundService::class.java))
+        workerState = "STOPPED"
+        status = "Gateway heartbeat service stopped. No SMS operation is active."
     }
 
     private fun beginGoogleSignIn() {
