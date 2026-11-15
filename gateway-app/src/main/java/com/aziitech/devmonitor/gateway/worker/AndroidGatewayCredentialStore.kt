@@ -11,7 +11,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-data class StoredGatewayCredential(val gatewayId: String, val gatewayToken: String)
+data class StoredGatewayCredential(val gatewayId: String, val gatewayToken: String, val controllerBaseUrl: String?)
 
 /** Stores the one-time-issued Gateway bearer credential encrypted with an Android Keystore key. */
 class AndroidGatewayCredentialStore(context: Context) {
@@ -21,11 +21,13 @@ class AndroidGatewayCredentialStore(context: Context) {
     )
 
     @Synchronized
-    fun save(gatewayId: String, gatewayToken: String) {
+    fun save(gatewayId: String, gatewayToken: String, controllerBaseUrl: String) {
         require(gatewayId.isNotBlank() && gatewayToken.isNotBlank())
+        require(controllerBaseUrl.startsWith("https://", ignoreCase = true))
         val payload = JSONObject()
             .put("gatewayId", gatewayId)
             .put("gatewayToken", gatewayToken)
+            .put("controllerBaseUrl", controllerBaseUrl)
             .toString()
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
@@ -45,7 +47,11 @@ class AndroidGatewayCredentialStore(context: Context) {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(TAG_BITS, iv))
         val payload = JSONObject(String(cipher.doFinal(encrypted), Charsets.UTF_8))
-        return StoredGatewayCredential(payload.getString("gatewayId"), payload.getString("gatewayToken"))
+        return StoredGatewayCredential(
+            gatewayId = payload.getString("gatewayId"),
+            gatewayToken = payload.getString("gatewayToken"),
+            controllerBaseUrl = payload.optString("controllerBaseUrl").takeIf(String::isNotBlank)
+        )
     }
 
     @Synchronized
