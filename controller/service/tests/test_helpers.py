@@ -62,17 +62,20 @@ class FakeJwksClient:
         return FakeSigningKey(self.key)
 
 
-def _firebase_test_token(private_key, *, audience="fieldpulse-test", issuer=None):
+def _firebase_test_token(
+    private_key, *, audience="fieldpulse-test", issuer=None,
+    auth_time_offset=-10, issued_at_offset=0, expires_in=3600,
+):
     now = int(datetime.now(timezone.utc).timestamp())
     return jwt.encode(
         {
             "iss": issuer or f"https://securetoken.google.com/{audience}",
             "aud": audience,
-            "auth_time": now - 10,
+            "auth_time": now + auth_time_offset,
             "user_id": "test-firebase-uid",
             "sub": "test-firebase-uid",
-            "iat": now,
-            "exp": now + 3600,
+            "iat": now + issued_at_offset,
+            "exp": now + expires_in,
             "firebase": {"sign_in_provider": "google.com"},
         },
         private_key,
@@ -97,4 +100,36 @@ def test_firebase_id_token_rejects_wrong_project_audience():
         issuer="https://securetoken.google.com/fieldpulse-test",
     )
     with pytest.raises(jwt.InvalidAudienceError):
+        verify_firebase_id_token(token, "fieldpulse-test", FakeJwksClient(private_key.public_key()))
+
+
+
+def test_firebase_id_token_rejects_wrong_issuer():
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _firebase_test_token(
+        private_key,
+        issuer="https://securetoken.google.com/another-project",
+    )
+    with pytest.raises(jwt.InvalidIssuerError):
+        verify_firebase_id_token(token, "fieldpulse-test", FakeJwksClient(private_key.public_key()))
+
+
+def test_firebase_id_token_rejects_expired_token():
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _firebase_test_token(private_key, expires_in=-30)
+    with pytest.raises(jwt.ExpiredSignatureError):
+        verify_firebase_id_token(token, "fieldpulse-test", FakeJwksClient(private_key.public_key()))
+
+
+def test_firebase_id_token_rejects_future_authentication_time():
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _firebase_test_token(private_key, auth_time_offset=120, issued_at_offset=120)
+    with pytest.raises(ValueError, match="authentication time is in the future"):
+        verify_firebase_id_token(token, "fieldpulse-test", FakeJwksClient(private_key.public_key()))
+
+
+def test_firebase_id_token_rejects_authentication_time_after_token_issue():
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _firebase_test_token(private_key, auth_time_offset=30, issued_at_offset=0)
+    with pytest.raises(ValueError, match="authentication time is in the future"):
         verify_firebase_id_token(token, "fieldpulse-test", FakeJwksClient(private_key.public_key()))
