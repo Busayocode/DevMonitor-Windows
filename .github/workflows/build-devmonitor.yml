@@ -731,6 +731,16 @@ jobs:
           path: ${{ env.FINAL_APK }}
           if-no-files-found: error
 
+      - name: Publish directly downloadable Android APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: devmonitor-android-v${{ env.VERSION_CODE }}
+          name: DevMonitor Android v${{ env.VERSION_CODE }} — ${{ env.VERSION_NAME }}
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: ${{ env.FINAL_APK }}
+
       - name: Build summary
         shell: bash
         run: |
@@ -747,6 +757,8 @@ jobs:
     if: needs.detect.outputs.windows_zip != ''
     runs-on: windows-latest
     timeout-minutes: 45
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -866,6 +878,16 @@ jobs:
           path: ${{ env.PROJECT_DIR }}\installer\DevMonitor-Setup-*.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish directly downloadable Windows installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: devmonitor-windows-latest
+          name: DevMonitor Windows — Latest installer
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: ${{ env.PROJECT_DIR }}\installer\DevMonitor-Setup-*.exe
 
       - name: Upload portable Windows application
         uses: actions/upload-artifact@v4
