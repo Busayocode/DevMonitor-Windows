@@ -108,7 +108,16 @@ class SqliteSmsChannelStateStore(context: Context) : SmsChannelStateStore {
     /** Atomically advances the durable job and attempt lifecycle together. */
     @Synchronized
     fun saveJobAndAttempt(job: GatewayJobRecord, attempt: GatewayAttemptRecord) {
-        require(job.jobId == attempt.jobId)
+        require(job.jobId.isNotBlank() && job.gatewayId.isNotBlank())
+        require(attempt.attemptId.isNotBlank())
+        require(job.jobId == attempt.jobId) { "Job and attempt IDs must match" }
+        require(job.gatewayId == attempt.gatewayId) { "Job and attempt must belong to the same Gateway" }
+        require(job.attemptNumber == attempt.attemptNumber && attempt.attemptNumber > 0) {
+            "Job and attempt numbers must match and be positive"
+        }
+        require(job.leaseExpiresAt == attempt.leaseExpiresAt) {
+            "Job and attempt lease expiries must match"
+        }
         val db = helper.writableDatabase
         db.beginTransaction()
         try {
