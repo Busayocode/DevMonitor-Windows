@@ -79,7 +79,8 @@ data class GatewaySimOption(
     val subscriptionId: Int,
     val slotIndex: Int,
     val carrierName: String,
-    val ready: Boolean
+    val ready: Boolean,
+    val isGlobacom: Boolean
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -106,6 +107,7 @@ fun GatewayHomeScreen(
     availableGatewaySims: List<GatewaySimOption>,
     selectedSimSubscriptionId: Int?,
     onSelectGatewaySim: (Int) -> Unit,
+    onAutoSelectGlo: () -> Unit,
     onRequestSmsReadiness: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onStartWorker: () -> Unit,
@@ -287,7 +289,7 @@ fun GatewayHomeScreen(
                                 onVerifyToken, onTestController, onRegisterGateway
                             )
                             1 -> GatewayQueueContent()
-                            2 -> GatewayPhoneContent(workerState, gatewayId, controllerUrl, batteryOptimizationIgnored, smsPermissionsGranted, phoneStatePermissionGranted, activeSimCount, readySimCount, availableGatewaySims, selectedSimSubscriptionId, onSelectGatewaySim, onRequestSmsReadiness, onOpenBatterySettings, onStartWorker, onStopWorker)
+                            2 -> GatewayPhoneContent(workerState, gatewayId, controllerUrl, batteryOptimizationIgnored, smsPermissionsGranted, phoneStatePermissionGranted, activeSimCount, readySimCount, availableGatewaySims, selectedSimSubscriptionId, onSelectGatewaySim, onAutoSelectGlo, onRequestSmsReadiness, onOpenBatterySettings, onStartWorker, onStopWorker)
                             else -> GatewayAccountContent(signedIn, gatewayId, busy, onVerifyToken)
                         }
                         Spacer(Modifier.height(8.dp))
@@ -445,6 +447,7 @@ private fun GatewayPhoneContent(
     availableGatewaySims: List<GatewaySimOption>,
     selectedSimSubscriptionId: Int?,
     onSelectGatewaySim: (Int) -> Unit,
+    onAutoSelectGlo: () -> Unit,
     onRequestSmsReadiness: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onStartWorker: () -> Unit,
@@ -507,7 +510,7 @@ private fun GatewayPhoneContent(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = availableGatewaySims.any { it.ready }
             ) {
-                Text(selectedSim?.let { "SIM ${it.slotIndex + 1} • ${it.carrierName}" } ?: "Choose a SIM")
+                Text(selectedSim?.let { "SIM ${it.slotIndex + 1} • ${it.carrierName}${if (it.isGlobacom) " • Glo" else ""}" } ?: "Choose a SIM")
             }
             androidx.compose.material3.DropdownMenu(
                 expanded = simMenuExpanded,
@@ -516,7 +519,7 @@ private fun GatewayPhoneContent(
                 availableGatewaySims.forEach { sim ->
                     androidx.compose.material3.DropdownMenuItem(
                         text = {
-                            Text("SIM ${sim.slotIndex + 1} • ${sim.carrierName}${if (sim.ready) " • READY" else " • NOT READY"}")
+                            Text("SIM ${sim.slotIndex + 1} • ${sim.carrierName}${if (sim.isGlobacom) " • GLO" else ""}${if (sim.ready) " • READY" else " • NOT READY"}")
                         },
                         onClick = {
                             simMenuExpanded = false
@@ -528,10 +531,13 @@ private fun GatewayPhoneContent(
             }
         }
         if (selectedSim == null) {
-            Text("No SIM is selected. Choose a ready SIM before Gateway SMS work can be enabled. The app will not choose a line automatically.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            Text("The Gateway automatically selects the first READY Glo SIM by slot order. If none is detected, choose a SIM manually. Manual selection is remembered and never silently replaced.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         } else {
             AuroraStatusPill("SELECTED • SIM ${selectedSim.slotIndex + 1}", if (selectedSim.ready) AuroraEmerald else AuroraCyan)
-            Text("${selectedSim.carrierName} is selected. If this subscription disappears or changes, the selection is cleared and the Gateway must be paused for a new choice.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            Text("${selectedSim.carrierName} is selected${if (selectedSim.isGlobacom) " as the preferred Glo line" else " by manual override"}. If this subscription becomes unavailable, Gateway SMS work must pause; the phone's default Messaging-app SIM is never used as a fallback.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+        DevMonitorOutlinedButton(onClick = onAutoSelectGlo, modifier = Modifier.fillMaxWidth()) {
+            Text("Auto-select Glo")
         }
         DevMonitorOutlinedButton(onClick = onRequestSmsReadiness, modifier = Modifier.fillMaxWidth()) {
             Text(if (smsPermissionsGranted && phoneStatePermissionGranted) "Refresh SMS and SIM readiness" else "Review SMS permissions")
