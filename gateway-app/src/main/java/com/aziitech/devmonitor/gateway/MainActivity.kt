@@ -7,6 +7,8 @@ import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.PowerManager
+import android.telephony.SubscriptionManager
+import android.telephony.TelephonyManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -38,11 +40,21 @@ class MainActivity : ComponentActivity() {
     private var signedIn by mutableStateOf(false)
     private var workerState by mutableStateOf("STOPPED")
     private var batteryOptimizationIgnored by mutableStateOf(false)
+    private var smsPermissionsGranted by mutableStateOf(false)
+    private var phoneStatePermissionGranted by mutableStateOf(false)
+    private var activeSimCount by mutableStateOf(0)
+    private var readySimCount by mutableStateOf(0)
     private val firebaseTokens by lazy { FirebaseAuthIdTokenProvider() }
     private val credentialStore by lazy { AndroidGatewayCredentialStore(applicationContext) }
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) status = "Notification permission was not granted. Android may limit where the foreground notification appears; the worker will still show its status in system task controls."
         launchGatewayWorkerService()
+    }
+
+    private val smsPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+        refreshSmsReadiness()
+        if (results.values.any { !it }) status = "Some Gateway SMS permissions were denied. SMS processing remains disabled."
+        else status = "SMS permissions granted. SIM readiness is checked separately; no message was sent or received."
     }
 
     private val signInLauncher = registerForActivityResult(
@@ -126,6 +138,11 @@ class MainActivity : ComponentActivity() {
                     busy = busy,
                     workerState = workerState,
                     batteryOptimizationIgnored = batteryOptimizationIgnored,
+                    smsPermissionsGranted = smsPermissionsGranted,
+                    phoneStatePermissionGranted = phoneStatePermissionGranted,
+                    activeSimCount = activeSimCount,
+                    readySimCount = readySimCount,
+                    onRequestSmsReadiness = { requestSmsReadiness() },
                     onOpenBatterySettings = { openBatteryOptimizationSettings() },
                     onStartWorker = { requestGatewayWorkerStart() },
                     onStopWorker = { stopGatewayWorker() },
@@ -173,6 +190,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         workerState = GatewayForegroundService.readState(this)
         refreshBatteryOptimizationStatus()
+        refreshSmsReadiness()
     }
 
     private fun refreshBatteryOptimizationStatus() {
@@ -188,6 +206,48 @@ class MainActivity : ComponentActivity() {
             status = "Android could not open battery-optimization settings. Open Settings and search for Battery optimization or App battery usage."
         }
     }
+    private fun requestSmsReadiness() {
+        val permissions = arrayOf(
+            android.Manifest.permission.SEND_SMS,
+            android.Manifest.permission.RECEIVE_SMS,
+            android.Manifest.permission.READ_PHONE_STATE
+        )
+        val missing = permissions.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isEmpty()) {
+            refreshSmsReadiness()
+            status = "SMS permissions are already granted. SIM status refreshed; SMS sending and receiving are not implemented yet."
+        } else {
+            status = "Android will ask for the permissions needed for the dedicated Gateway role. This does not start an SMS operation."
+            smsPermissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+
+    private fun refreshSmsReadiness() {
+        val sendGranted = checkSelfPermission(android.Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+        val receiveGranted = checkSelfPermission(android.Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+        phoneStatePermissionGranted = checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+        smsPermissionsGranted = sendGranted && receiveGranted
+        activeSimCount = 0
+        readySimCount = 0
+        if (!phoneStatePermissionGranted) return
+        runCatching {
+            val subscriptions = getSystemService(TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+            val active = subscriptions.activeSubscriptionInfoList.orEmpty()
+            activeSimCount = active.size
+            val telephony = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
+            readySimCount = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                active.count { info ->
+                    telephony.createForSubscriptionId(info.subscriptionId).simState == TelephonyManager.SIM_STATE_READY
+                }
+            } else {
+                if (active.isNotEmpty() && telephony.simState == TelephonyManager.SIM_STATE_READY) 1 else 0
+            }
+        }.onFailure {
+            activeSimCount = 0
+            readySimCount = 0
+        }
+    }
+
 
     private fun requestGatewayWorkerStart() {
         if (gatewayId == null) {
