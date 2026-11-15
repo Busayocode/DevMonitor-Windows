@@ -33,3 +33,14 @@ The 3030 protocol does not echo the queried device or partner code. Therefore a 
 - Android CI build.
 - Physical dual-SIM tests covering Glo auto-selection, manual override, SIM removal/lock, sender delivery and app process death.
 - A controlled 3030 exchange using an approved test SIM before any live queue is enabled.
+
+
+## Parser and gated inbox processing — 15 Nov 2026
+
+- Added a conservative parser for the documented seven numeric report fields: Today's SIMReg Count, MTD SIMReg Count, Active, Bar 48, Bar 96, Duplicates and Monthly Target. It rejects missing, duplicate, negative or non-numeric fields rather than guessing.
+- Date/time is retained as source text; the exact carrier date format is not normalized yet.
+- Added parser unit tests for valid, incomplete, duplicate, empty, negative and non-numeric messages.
+- Added durable inbox decision updates and a processor that submits each valid 3030 message to the existing per-phone transaction gate. Messages become accepted-pending-controller, unassigned, duplicate or quarantined; malformed replies are fingerprinted and remain unassigned.
+- The processor is not wired to the receiver or active worker yet. It must only be invoked after the worker restores its durable channel state and configures an evidence-based post-reply quiet period.
+- Accepted payloads are staged locally only. No controller submission, outbound SMS, automatic retry or queue advancement is enabled.
+- Parser field labels are based on the supplied protocol description. A redacted real carrier response is still required to validate formatting and any optional labels before production parsing is enabled.
