@@ -303,15 +303,16 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 ## 20. Globacom-first SIM selection — 15 Nov 2026
 
 - [x] Detect a Nigerian Globacom SIM by home-operator MCC/MNC 621/50, using the carrier label only when the operator code is unavailable.
-- [x] Automatically select the first READY Glo subscription by SIM-slot order when automatic mode is active.
+- [x] Automatically select a READY Glo subscription only when exactly one is available; if multiple READY Glo SIMs are present, require the operator to choose rather than guessing by slot order.
 - [x] Persist selection mode separately from the selected subscription: AUTO_GLO or MANUAL.
 - [x] Preserve an explicit manual override; never replace a manually selected SIM silently.
 - [x] Add an Auto-select Glo control to return to preferred automatic selection.
-- [x] Show Glo identity and readiness in the Gateway SIM selector.
+- [x] Show Glo identity and readiness in the Gateway SIM selector, including an explicit multiple-Glo choice prompt.
 - [ ] Connect the selected subscription to SmsManager.createForSubscriptionId() in the eventual worker sender; revalidate active + READY immediately before each send.
 - [ ] If a manually selected subscription disappears or becomes unavailable, pause SMS work and require operator action; never fall back to Android's default SMS subscription.
 - [ ] Add unit/instrumentation coverage for multiple Glo SIMs, mixed carriers, no Glo SIM, SIM lock/removal, and manual override.
 - [x] Build and verify the current Gateway branch after this UI/state update — Gateway workflow run #91 (`43711966513`) passed on 15 Nov 2026; APK and source package uploaded. No real-device SIM/SMS test is implied.
+- **Selection ambiguity safeguard:** automatic mode selects only a single READY Glo subscription. Two or more READY Glo subscriptions leave selection empty until the operator chooses one; manual selection remains pinned.
 - **Current boundary:** this remains selection/readiness groundwork. No SMS is sent or received; heartbeat SMS/telephony readiness remains false.
 
 
