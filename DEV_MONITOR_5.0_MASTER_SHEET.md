@@ -286,3 +286,13 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - IMPORTANT BOUNDARY: this is readiness discovery only. No SMS sender, receiver, inbox access, sender verification, message correlation or transaction execution is implemented. The controller heartbeat deliberately continues reporting sms_permission_ready=false and telephony_ready=false until the complete SMS transport is implemented and validated.
 - SMS permissions are restricted/sensitive in distribution policy. Before any public Play release, verify current Google Play SMS/Call Log policy and declaration eligibility for the app's core dedicated Gateway use case. This branch is not being promoted for public release at this stage.
 - Physical-device tests still required: permission grant/denial, no SIM, SIM absent/locked/ready, dual SIM, SIM removed while app is running, and permission revoked in Settings.
+
+
+## 19. Explicit multi-SIM selection foundation — 15 Nov 2026
+
+- Added a Gateway SIM selector that lists each active Android subscription separately by SIM slot and carrier name; it does not request or display the phone number.
+- The operator must explicitly choose a SIM. The app does not silently select the default subscription or switch lines when multiple SIMs are present.
+- The selected subscription ID is persisted locally so the choice survives an app restart. On each readiness refresh, the saved selection is checked against the currently active subscriptions; if the SIM is removed, replaced or no longer visible, the selection is cleared and must be made again.
+- SIMs not reporting READY are visible but disabled in the selector. A selected SIM is accepted only while it remains present and READY.
+- This is selection and readiness groundwork only. The selected subscription is not yet passed to SmsManager, no SMS is sent or received, and controller heartbeat readiness remains false. Before enabling SMS, the sender must revalidate the selected subscription immediately before every send and pause rather than fall back if it is unavailable.
+- Physical-device validation still required on single-SIM, dual-SIM and multi-SIM devices, including SIM swap/removal, disabled SIM, locked SIM, reboot and subscription-ID changes.
