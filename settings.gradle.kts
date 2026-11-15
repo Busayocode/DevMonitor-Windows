@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 rootProject.name = "DevMonitor-Gateway-Android-Auth"
 include(":gateway-auth-android")
 include(":gateway-app")
+include(":gateway-worker-core")
