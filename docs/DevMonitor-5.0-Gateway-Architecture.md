@@ -1,7 +1,7 @@
 # DevMonitor 5.0 — Gateway Architecture and Protocol (Milestone 1)
 
 **Branch:** `devmonitor-5.0-foundation`  
-**Status:** Architecture proposal for implementation planning  
+**Status:** Approved architecture baseline; reference core/controller implementations are tracked in the Phase 2B and Phase 3 documents. Live deployment and Android worker integration remain pending.  
 **Scope:** Multi-phone SMS gateway, controller, client protocol and reliability model  
 **Non-goal:** This milestone does not change the existing Full edition or production SMS workflow.
 
