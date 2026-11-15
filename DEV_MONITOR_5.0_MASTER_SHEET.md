@@ -152,7 +152,8 @@ It does **not** prove live Google/Firebase sign-in, a successful request to a de
 - Implemented in source: Gateway-owned copies of FieldPulseUi.kt, StateComponents.kt and GatewayAuroraTheme.kt; Compose enabled in Gateway build; bare diagnostic layout replaced by an Aurora-based four-section Gateway shell.
 - Visual components reused: Aurora palette/background, gradient and outlined buttons, glass cards, hero, metric cards, section headers, status pills, custom navigation glyphs and loading/empty/error/offline state components.
 - CI: new Gateway Compose build validation is pending. Do not ask the user to install this intermediate build until the run passes.
-- Not yet complete: full drawer/navigation parity, floating waiting loader, launcher branding, dialogs and transitions, responsive screenshot comparison and final visual QA.
+- Implemented in source: branded modal navigation drawer, four workspace destinations, animated fade/slide screen transitions, floating Aurora wait overlay with animated indeterminate progress rail, and original DevMonitor toolbar/drawer icon.
+- Not yet complete: verify launcher branding, dialogs, screenshot comparisons, responsive QA, full interaction polish and CI validation.
 - Acceptance: do not claim 100% parity until all those areas are compared against the main app at matching device sizes.
 
 ## 10. Evidence and status discipline
