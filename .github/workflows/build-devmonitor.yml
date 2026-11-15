@@ -515,6 +515,26 @@ jobs:
           print("Android v352 version, Glo MCC/MNC detection, manual SIM override, explicit subscription routing, no default-SIM fallback, SMS Checker notification progress/Pause/Stop, report imports, Drive backup/restore and manual LAN sync verified alongside existing SMS History, MOM, device-management and Drive-auth features.")
           PY
 
+      - name: Package patched Android v352 source with master worksheet
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "$GITHUB_WORKSPACE/DEV_MONITOR_MASTER_WORKSHEET.md" "$PROJECT_DIR/DEV_MONITOR_MASTER_WORKSHEET.md"
+          SOURCE_ARCHIVE="$GITHUB_WORKSPACE/DevMonitor-An-v352-4.7.0-TARGET-GLO-SIM-AUTO-SOURCE.zip"
+          cd "$PROJECT_DIR"
+          zip -qr "$SOURCE_ARCHIVE" . \
+            -x "./.gradle/*" "./.kotlin/*" "./build/*" "./app/build/*" \
+               "./app/fieldpulse-release.jks" "./**/build/*"
+          test -s "$SOURCE_ARCHIVE"
+          echo "Created patched v352 Android source package with the master worksheet."
+      - name: Upload patched Android v352 source package
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-An-v352-Glo-SIM-Auto-Source
+          path: DevMonitor-An-v352-4.7.0-TARGET-GLO-SIM-AUTO-SOURCE.zip
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Generate automated What's New release notes
         shell: bash
         run: |
