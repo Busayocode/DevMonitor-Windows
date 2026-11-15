@@ -18,6 +18,9 @@ The Gateway must not be released as a bare prototype. Its Android UI must reuse 
 4. Build Gateway screens using the shared components rather than default platform widgets.
 5. Compare screenshots at matching device dimensions and iterate on visual differences before asking the user to install a build.
 
+## Reference extraction status
+The v337 archive has been retrieved and integrity-checked by GitHub Actions. The Gateway branch is now importing the original Aurora UI source components into its own package for controlled reuse.
+
 ## Current audit
 The current Gateway `MainActivity` is a plain programmatic `LinearLayout` with default Android `Button`, `EditText` and `TextView` controls. It is an authentication diagnostic screen, not release-quality UI. It does not yet meet visual parity.
 
