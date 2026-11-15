@@ -398,9 +398,11 @@ jobs:
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_350.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/patch_operation_service_v351.py")
           (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_351.py")
-          echo "Applied v343 SMS History and MOM Conversion, daily history totals, Drive diagnostics, bulk SMS device management, persistent last-checked device priority, operation-aware foreground notifications and SMS pause/stop controls; Android v351."
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/apply_glo_sim_routing.py")
+          (cd "$PROJECT_DIR" && python3 "$GITHUB_WORKSPACE/trial-overlays/android/scripts/bump_android_version_352.py")
+          echo "Applied v343 SMS History and MOM Conversion, daily history totals, Drive diagnostics, bulk SMS device management, persistent last-checked device priority, operation-aware notifications, and Glo-first explicit SIM routing; Android v352."
 
-      - name: Verify Android v351 preserves existing features and operation notifications
+      - name: Verify Android v352 preserves existing features and Glo SIM routing
         shell: bash
         run: |
           set -euo pipefail
@@ -425,8 +427,16 @@ jobs:
               raise SystemExit("Android ZIP still contains the invalid return@forEachIndexed.")
           if not re.search(r'message = "Send failed: \$code"\s*\n\s*continue', source):
               raise SystemExit("Queued Recheck send-failure branch is not permanently corrected in the ZIP.")
-          if not re.search(r'versionCode\s*=\s*351', gradle):
-              raise SystemExit("Android build must declare versionCode 351 after preserving the v350 baseline.")
+          if not re.search(r'versionCode\s*=\s*352', gradle):
+              raise SystemExit("Android build must declare versionCode 352 after preserving the v351 baseline.")
+          if "SMS_SIM_MODE_AUTO_GLO" not in source or "isGlobacomSubscription" not in source or "mccString" not in source:
+              raise SystemExit("Glo MCC/MNC detection and automatic-selection mode are missing.")
+          if "Auto-select Glo" not in source or "SMS_SIM_MODE_MANUAL" not in source:
+              raise SystemExit("Manual SIM override or return-to-Glo automatic selection is missing.")
+          if "createForSubscriptionId(subscriptionId)" not in source or "smsManagerForSubscription" not in source:
+              raise SystemExit("SMS is not explicitly routed through the selected subscription.")
+          if "SubscriptionManager.getDefaultSmsSubscriptionId()" in source or "SmsManager.getDefault()" in source:
+              raise SystemExit("Unsafe fallback to the phone's default SMS SIM remains.")
           if source.count('whatsNewHighlights = listOf("Track active checks and data operations from Android notifications, with pause and stop controls for SMS Checker.")') != 2:
               raise SystemExit("v351 operation-notification What's New message is missing from both update entry points.")
           if "allDailySnapshots" not in history or "SmsHistoryTableCell" not in history:
@@ -502,7 +512,7 @@ jobs:
               raise SystemExit("Both Google Drive backup and restore entry points must show operation notifications.")
           if 'OperationForegroundService.start(context, "DevMonitor sync"' not in next_level_text:
               raise SystemExit("User-initiated LAN Sync now does not show an operation notification.")
-          print("Android v351 version, SMS Checker notification progress/Pause/Stop, report imports, Drive backup/restore and manual LAN sync foreground notifications verified alongside existing SMS History, MOM, device-management and Drive-auth features.")
+          print("Android v352 version, Glo MCC/MNC detection, manual SIM override, explicit subscription routing, no default-SIM fallback, SMS Checker notification progress/Pause/Stop, report imports, Drive backup/restore and manual LAN sync verified alongside existing SMS History, MOM, device-management and Drive-auth features.")
           PY
 
       - name: Generate automated What's New release notes
