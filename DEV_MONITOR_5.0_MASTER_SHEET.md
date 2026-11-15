@@ -389,3 +389,16 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - [ ] Keep foreground service heartbeat-only until the recovery adapter, controller reconciliation and controlled physical-device tests are complete.
 
 **Current operational boundary:** recovery assessment is tested as a pure policy, but it is not yet wired into service startup or a live dispatch loop. No live SMS execution, automatic retry, 3030 correlation or process-restart recovery is claimed. Physical SIM testing and a redacted real 3030 response sample remain outstanding.
+
+
+## 27. Android Gateway restart-recovery adapter — 15 Nov 2026
+
+- Added a production Android recovery adapter around the pure worker-core recovery policy.
+- Added a durable SQLite query for all unresolved local attempts, so recovery can detect orphaned or conflicting work instead of inspecting only the server's active attempt.
+- Recovery compares controller and local job/attempt IDs, Gateway ownership, device ID, query profile, lease identity, encrypted lease-token availability and the persisted SMS channel transaction.
+- A successful Android `SMS_SENT` callback is reconciled with the controller's existing `awaiting-reply` endpoint without resending.
+- A matching active reply wait can resume intake only when its persisted response deadline remains valid.
+- An expired lease, expired/missing response deadline, missing lease token, orphaned local attempt, identity mismatch or multiple unresolved attempts is quarantined. The adapter never sends SMS, claims work or retries.
+- A leased attempt is marked eligible only while its lease is live and the persisted quiet/drain window has elapsed.
+- **Not yet operational:** this adapter is not wired into foreground-service startup. The service remains heartbeat-only; no job claim, SMS send, or automatic reply/result processing is enabled.
+- CI build and source package verification are required for this commit. Physical Glo SIM and live 3030 testing remain outstanding.
