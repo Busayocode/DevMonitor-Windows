@@ -313,3 +313,16 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - [ ] Add unit/instrumentation coverage for multiple Glo SIMs, mixed carriers, no Glo SIM, SIM lock/removal, and manual override.
 - [x] Build and verify the current Gateway branch after this UI/state update — Gateway workflow run #91 (`43711966513`) passed on 15 Nov 2026; APK and source package uploaded. No real-device SIM/SMS test is implied.
 - **Current boundary:** this remains selection/readiness groundwork. No SMS is sent or received; heartbeat SMS/telephony readiness remains false.
+
+
+## 21. Guarded Android 3030 SMS intake — 15 Nov 2026
+
+- Added `GatewaySmsReceiver`, registered for Android `SMS_RECEIVED` broadcasts and protected by the platform `BROADCAST_SMS` permission.
+- Added a strict pure-Kotlin sender policy: the complete normalized originating address must equal `3030`; arbitrary phone numbers and partial matches are rejected.
+- Multipart messages from one originating address are assembled in timestamp order.
+- Only verified 3030 messages are stored in a private, bounded SQLite inbox; unrelated personal SMS are ignored. Inbox rows retain a duplicate fingerprint, receive timestamp, available Android subscription ID, body and `RECEIVED_UNASSIGNED` processing state.
+- Inbox storage is capped at the newest 200 rows. Message bodies are not logged.
+- Added unit coverage for exact short-code matching and rejection of prefix/suffix/ordinary-number lookalikes.
+- This is intake only: no parsing, device/partner attribution, transaction completion, controller result submission, retry or outbound SMS is enabled. All received messages remain unassigned until the transaction gate and parser are integrated.
+- Documentation: `docs/DevMonitor-5.0-Gateway-SMS-Intake.md`.
+- CI run for this slice is pending. Physical-device and live 3030 validation remain outstanding.
