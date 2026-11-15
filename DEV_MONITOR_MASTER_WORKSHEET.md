@@ -66,4 +66,4 @@ These are the latest package references in the development context at the time t
 - Android 12+ uses `SmsManager.createForSubscriptionId()`; earlier supported Android versions use the subscription-bound legacy factory.
 - The Android Messaging app's default SMS SIM is independent of DevMonitor's selected subscription.
 - Existing SMS Checker wait periods, retry sequencing, history, payments, MOM, reports, Drive and other business rules are unchanged.
-- CI/runtime status: pending v352 run; do not treat source edits as a successful build or real-device verification.
+- CI status: **v352 Android release and Windows build passed** in workflow run #190 (`43711986194`) on 15 Nov 2026; Android signing certificate and Online Reports configuration checks passed. The source-package workflow run #191 (`43712043732`) also passed its v352 feature verification and source-ZIP packaging steps. No physical-device SIM-selection test is implied.
