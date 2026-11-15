@@ -12,7 +12,7 @@ Verified design tokens:
 - Green success #20D889, emerald #10B981, mint #5EEAD4.
 - Light surfaces #F6FAFF, white cards, pale blue borders #DDE8F5.
 - Large rounded glass cards, gradient action buttons, outlined gradient-accent buttons, luminous status indicators and live dots.
-- The main app uses a dark navy top toolbar, modal navigation drawer, and dark bottom navigation bar with custom glyphs.
+- The main app uses a dark navy top toolbar, modal navigation drawer, and dark bottom navigation bar with custom glyphs. The Gateway launcher now references the original DevMonitor icon.
 - Loading/waiting uses an animated floating Aurora loader with pulsing icon, shimmer copy, progress percentage and cyan progress bar. The app also has reusable loading, empty, error and offline states.
 - Motion respects Android's system reduced-animation setting in its reusable live indicator and hero components.
 
@@ -33,7 +33,7 @@ Verified design tokens:
 - Reused the original brand mark in both toolbar and drawer.
 
 ## Still required before claiming visual parity
-- [x] Compose compilation issue identified from CI and corrected (missing animation/graphics imports); awaiting rerun.
+- [x] First CI compile errors identified and corrected: missing layout-size/Color imports in the Aurora wait panel, missing worker-core project dependency, and Java time desugaring for minSdk 23; integrated build rerun pending.
 - [x] Original DevMonitor brand icon applied to the Gateway launcher manifest.
 - [x] Branded modal drawer, four destinations, animated screen transitions and floating Aurora waiting overlay implemented.
 - [x] Reusable Aurora buttons, cards, hero, metrics, status pills and loading/empty/error/offline states are available in the Gateway package.
@@ -47,3 +47,7 @@ Treat the current Aurora implementation as the shared visual baseline, not a cla
 
 ## Source reference
 The reference archive is v337 from the development branch. It is a reference source only; no Full-edition code or business logic has been merged into the Gateway app.
+
+
+## CI correction record
+The first integrated Compose/SQLite build exposed unresolved `Modifier.size` and `Color` imports in the waiting component, plus the Android app had not yet declared a project dependency on `:gateway-worker-core`. These are corrected. Java time core-library desugaring is enabled because the Gateway app minimum SDK is 23. The latest integrated run is pending; no build success is claimed until it completes.
