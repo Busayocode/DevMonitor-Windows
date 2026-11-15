@@ -134,7 +134,12 @@ class GatewayForegroundService : Service() {
         heartbeatJob?.cancel()
         heartbeatJob = null
         saveState(STATE_STOPPED)
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        if (Build.VERSION.SDK_INT >= 24) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
         stopSelf()
     }
 
@@ -142,6 +147,8 @@ class GatewayForegroundService : Service() {
         getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
             .putString(KEY_WORKER_STATE, state)
             .apply()
+        sendBroadcast(Intent(ACTION_STATE_CHANGED).setPackage(packageName)
+            .putExtra(EXTRA_STATE, state))
     }
 
     private fun updateNotification(message: String) {
@@ -171,12 +178,12 @@ class GatewayForegroundService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .addAction(
-                0,
+                if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,
                 pauseOrResumeLabel,
                 servicePendingIntent(pauseOrResumeAction, REQUEST_TOGGLE)
             )
             .addAction(
-                0,
+                android.R.drawable.ic_menu_close_clear_cancel,
                 "Stop",
                 servicePendingIntent(ACTION_STOP, REQUEST_STOP)
             )
@@ -229,6 +236,8 @@ class GatewayForegroundService : Service() {
         const val ACTION_PAUSE = "com.aziitech.devmonitor.gateway.action.PAUSE"
         const val ACTION_RESUME = "com.aziitech.devmonitor.gateway.action.RESUME"
         const val ACTION_STOP = "com.aziitech.devmonitor.gateway.action.STOP"
+        const val ACTION_STATE_CHANGED = "com.aziitech.devmonitor.gateway.action.STATE_CHANGED"
+        const val EXTRA_STATE = "worker_state"
 
         const val PREFERENCES = "devmonitor_gateway_runtime"
         const val KEY_CONTROLLER_URL = "controller_base_url"
