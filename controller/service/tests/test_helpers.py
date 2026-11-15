@@ -130,6 +130,6 @@ def test_firebase_id_token_rejects_future_authentication_time():
 
 def test_firebase_id_token_rejects_authentication_time_after_token_issue():
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    token = _firebase_test_token(private_key, auth_time_offset=30, issued_at_offset=0)
+    token = _firebase_test_token(private_key, auth_time_offset=0, issued_at_offset=-120)
     with pytest.raises(ValueError, match="authentication time is in the future"):
         verify_firebase_id_token(token, "fieldpulse-test", FakeJwksClient(private_key.public_key()))
