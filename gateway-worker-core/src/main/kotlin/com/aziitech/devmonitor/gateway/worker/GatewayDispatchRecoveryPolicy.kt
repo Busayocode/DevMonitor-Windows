@@ -1,7 +1,7 @@
 package com.aziitech.devmonitor.gateway.worker
 
 data class ControllerDispatchSnapshot(val jobId: String, val attemptId: String, val state: String)
-data class LocalDispatchSnapshot(val jobId: String, val attemptId: String, val jobState: String, val attemptState: String, val transactionId: String? = null, val sentAt: String? = null)
+data class LocalDispatchSnapshot(val jobId: String, val attemptId: String, val attemptJobId: String, val jobState: String, val attemptState: String, val transactionId: String? = null, val sentAt: String? = null)
 enum class DispatchRecoveryAction { NO_ACTIVE_WORK, ELIGIBLE_LEASED_WORK, RECONCILE_SUCCESSFUL_SEND_CALLBACK, RESUME_WAITING_FOR_REPLY, QUARANTINE }
 data class DispatchRecoveryAssessment(val action: DispatchRecoveryAction, val reason: String)
 
@@ -10,7 +10,7 @@ object GatewayDispatchRecoveryPolicy {
  fun assess(controller: ControllerDispatchSnapshot?, local: LocalDispatchSnapshot?, leaseTokenAvailable: Boolean, channel: SmsChannelSnapshot): DispatchRecoveryAssessment {
   if (controller == null) return if (local != null && local.attemptState in setOf("LEASED","SENDING","AWAITING_REPLY","AMBIGUOUS","TIMED_OUT")) quarantine("Local unresolved work exists but controller reports no active attempt") else DispatchRecoveryAssessment(DispatchRecoveryAction.NO_ACTIVE_WORK,"No active controller or local attempt")
   if (local == null) return quarantine("Controller has active work but durable local job/attempt is missing")
-  if (controller.jobId != local.jobId || controller.jobId != local.jobId || controller.attemptId != local.attemptId) return quarantine("Controller and local job/attempt identities do not match")
+  if (controller.jobId != local.jobId || local.attemptJobId != controller.jobId || controller.attemptId != local.attemptId) return quarantine("Controller and local job/attempt identities do not match")
   if (!leaseTokenAvailable) return quarantine("Encrypted lease token is unavailable")
   if (channel.state == SmsChannelState.QUARANTINED) return quarantine("Local SMS channel is already quarantined")
   val tx = channel.transaction
