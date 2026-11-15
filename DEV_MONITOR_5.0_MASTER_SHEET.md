@@ -298,3 +298,18 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - Physical-device validation still required on single-SIM, dual-SIM and multi-SIM devices, including SIM swap/removal, disabled SIM, locked SIM, reboot and subscription-ID changes.
 
 - CI verification note: the first SIM-selector APK compile exposed a missing Compose `mutableStateOf` import in `GatewayHomeScreen.kt`; this was corrected in commit `0575912`. A fresh build is required before treating this milestone as build-verified.
+
+
+## 20. Globacom-first SIM selection — 15 Nov 2026
+
+- [x] Detect a Nigerian Globacom SIM by home-operator MCC/MNC 621/50, using the carrier label only when the operator code is unavailable.
+- [x] Automatically select the first READY Glo subscription by SIM-slot order when automatic mode is active.
+- [x] Persist selection mode separately from the selected subscription: AUTO_GLO or MANUAL.
+- [x] Preserve an explicit manual override; never replace a manually selected SIM silently.
+- [x] Add an Auto-select Glo control to return to preferred automatic selection.
+- [x] Show Glo identity and readiness in the Gateway SIM selector.
+- [ ] Connect the selected subscription to SmsManager.createForSubscriptionId() in the eventual worker sender; revalidate active + READY immediately before each send.
+- [ ] If a manually selected subscription disappears or becomes unavailable, pause SMS work and require operator action; never fall back to Android's default SMS subscription.
+- [ ] Add unit/instrumentation coverage for multiple Glo SIMs, mixed carriers, no Glo SIM, SIM lock/removal, and manual override.
+- [ ] Build and verify the current Gateway branch after this UI/state update.
+- **Current boundary:** this remains selection/readiness groundwork. No SMS is sent or received; heartbeat SMS/telephony readiness remains false.
