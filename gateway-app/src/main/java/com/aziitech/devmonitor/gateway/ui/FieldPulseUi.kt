@@ -79,7 +79,7 @@ fun fieldPulseBackground(dark: Boolean): Brush = if (dark) {
 }
 
 @Composable
-private fun devMonitorReducedMotion(): Boolean {
+internal fun devMonitorReducedMotion(): Boolean {
     val context = LocalContext.current
     return remember(context) {
         runCatching {
