@@ -18,19 +18,11 @@ This checklist is for the Gateway prototype only. It must not replace or disturb
 - CI uses a disposable fake Firebase configuration for compilation only. It cannot sign in to a real account.
 - The ordinary Gateway client app manifest declares INTERNET only; it has no SMS send/receive/read permissions.
 
-## Firebase Console work still required for a real Gateway APK
+## Firebase Console setup — current prototype branch
 
-1. Open the existing **FieldPulse** project, project ID `fieldpulse-b3eb3`.
-2. Keep the existing Google provider enabled under **Authentication → Sign-in method**. Do not create a second Firebase project for this prototype.
-3. Under **Project settings → Your apps**, add an Android app with package name exactly `com.aziitech.devmonitor.gateway`.
-4. Add the SHA-1 fingerprints for the certificate(s) that will sign this Gateway app:
-   - the debug certificate used by the Android phone build;
-   - the release certificate if/when a release build is prepared.
-   Add SHA-256 as well if Firebase requests it. Fingerprints registered only against `com.aziitech.simregmonitor` do not automatically register the distinct Gateway package.
-5. Download the configuration file for this newly registered Gateway Android app. It must identify project `fieldpulse-b3eb3` and package `com.aziitech.devmonitor.gateway`.
-6. Place it locally at `prototypes/gateway-auth-android/gateway-app/google-services.json`. Do not use the Full edition's JSON file, and do not commit the real file or signing private keys to Git.
+The separate Android app registration for `com.aziitech.devmonitor.gateway` has been created in the existing `fieldpulse-b3eb3` project. The Gateway signing fingerprint was registered, and the app-specific `google-services.json` is present on the isolated `devmonitor-5.0-gateway-android-download` branch. GitHub Actions run #43681725883 verified the package in that file and successfully built the debug APK.
 
-The prototype obtains `default_web_client_id` from this app-specific Google Services configuration. If Google sign-in reports a missing ID token, check the Web OAuth client generated/associated with this same Firebase project and app registration; do not substitute a Drive OAuth client.
+Do not substitute the Full edition's `com.aziitech.simregmonitor` configuration. Do not commit service-account private keys, signing private keys or gateway installation bearer credentials. Keep the Firebase client API key's platform/API restrictions appropriate for the project.
 
 ## Controller configuration still required before an end-to-end request
 
