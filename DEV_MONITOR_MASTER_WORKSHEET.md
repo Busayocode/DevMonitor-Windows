@@ -53,3 +53,17 @@ These are the latest package references in the development context at the time t
 - [ ] Compare source changes against the other platform and update the parity register.
 - [ ] Include the parity register, naming procedure, change log and master worksheet in source packages where these project documents are maintained.
 - [ ] Build each intended platform and report the selected ZIP, workflow run, compile status, and runtime test status separately.
+
+
+## Full DevMonitor v352 — Globacom-first SIM routing (15 Nov 2026)
+
+- Baseline: Full Android v351, versionCode 351, from branch `trial/direct-google-account-lan-sync`; latest pre-change CI run #185 (run ID `43647093001`) passed Android and Windows.
+- New Full target: Android v352, versionCode 352. This is a separate trial branch update; production `main` remains untouched.
+- Detect a Globacom SIM using the SIM subscription's home operator MCC/MNC `621/50`; carrier display name is only a fallback when the operator code is unavailable.
+- Automatically select the first READY Glo SIM by physical slot order when automatic mode is active. If no READY Glo SIM exists, do not silently choose the phone's default SMS SIM; show the existing manual SIM picker.
+- Manual SIM selection is an explicit override and is persisted. The selector includes an `Auto-select Glo` action to restore automatic mode.
+- Both SMS send paths require an explicit active subscription ID and revalidate that the SIM is READY immediately before each send/retry. The implementation must not use `SubscriptionManager.getDefaultSmsSubscriptionId()` or `SmsManager.getDefault()` as a fallback.
+- Android 12+ uses `SmsManager.createForSubscriptionId()`; earlier supported Android versions use the subscription-bound legacy factory.
+- The Android Messaging app's default SMS SIM is independent of DevMonitor's selected subscription.
+- Existing SMS Checker wait periods, retry sequencing, history, payments, MOM, reports, Drive and other business rules are unchanged.
+- CI/runtime status: pending v352 run; do not treat source edits as a successful build or real-device verification.
