@@ -96,7 +96,8 @@ It does **not** prove live Google/Firebase sign-in, a successful request to a de
 - [x] Extend durable persistence from the SMS channel snapshot to controller job, attempt, lease and send lifecycle records (initial local schema/API implemented; CI and recovery tests pending).
 - [ ] Wire durable job/attempt transitions into the controller polling/claim client and the eventual foreground worker service.
 - [x] Review Android 14+ foreground-service type/permission requirements and Android 15 dataSync timeout/boot restrictions. `specialUse` is used provisionally for the long-running dedicated SMS Gateway relay; Google Play declaration/review remains pending. No BOOT_COMPLETED auto-start is declared.
-- [ ] Provide user-guided battery-optimization settings for dedicated worker phones only.
+- [x] Add a battery-optimization status check and user-guided shortcut to Android battery-optimization settings on the dedicated Gateway phone screen. It opens the system settings list; the operator chooses whether to exempt the app. No direct exemption request or automatic grant is performed.
+- [ ] Validate battery-optimization status and OEM-specific background controls on physical Gateway phones.
 - [ ] Test screen-off, Doze, Wi-Fi/mobile transitions, process kill, swipe-away, reboot and force-stop.
 - [ ] Never promise uninterrupted operation when Android/OEM restrictions prevent it.
 
@@ -262,5 +263,14 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - Added a Gateway phone screen with service status and Start/Stop controls. The persistent notification also exposes Pause/Resume/Stop while active.
 - Persisted the controller URL locally as non-secret configuration; the bearer credential remains encrypted by Android Keystore.
 - **Foreground-service classification:** Android 14+ requires a declared service type and corresponding permission. The app targets API 35, so `dataSync` is unsuitable for an always-on worker because Android 15 imposes a six-hour-per-24-hour limit and restricts boot-start. This prototype declares `specialUse` with a narrow subtype description for the dedicated user-started SMS Gateway relay. Google Play declaration/review is still required before Play distribution; this is not a policy approval claim.
-- No boot receiver, automatic battery-optimization exemption, SMS permissions, SMS send/receive, controller job claim, or job execution was added. The heartbeat cadence is currently 60 seconds and should be tuned against the deployed controller's operational limits before production. The app also checks whether its service is actually running before displaying a persisted RUNNING/PAUSED state.
+- No boot receiver, automatic battery-optimization exemption request, SMS permissions, SMS send/receive, controller job claim, or job execution was added. The Gateway screen now checks `PowerManager.isIgnoringBatteryOptimizations()` and provides a user-controlled shortcut to Android's battery-optimization settings; this does not override OEM background restrictions. The heartbeat cadence is currently 60 seconds and should be tuned against the deployed controller's operational limits before production. The app also checks whether its service is actually running before displaying a persisted RUNNING/PAUSED state.
 - CI validation and real-device notification/action/heartbeat tests remain pending.
+
+
+## 17. User-guided battery optimisation controls — 15 Nov 2026
+
+- Added a live Android battery-optimisation exemption status check using `PowerManager.isIgnoringBatteryOptimizations(packageName)`.
+- Added a dedicated Gateway status card with a system-settings shortcut using `Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`.
+- The operator must choose the app and approve any change inside Android Settings. The app does not request the restricted direct-exemption permission and does not silently change device settings.
+- The UI explains that exemption from standard Android battery optimisation does not guarantee immunity from OEM background limits, Doze edge cases, force-stop or network loss.
+- Physical-device verification and manufacturer-specific guidance remain pending. Heartbeat-only operation remains unchanged; no SMS permission, job claiming or SMS processing is enabled.
