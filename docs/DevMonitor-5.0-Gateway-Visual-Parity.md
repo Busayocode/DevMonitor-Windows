@@ -25,6 +25,13 @@ Verified design tokens:
 - Kept Google/Firebase sign-in, secure token verification and authenticated controller test callbacks in the Activity layer.
 - All changes are isolated to devmonitor-5.0-gateway-android-download; the Full edition and its business logic are not modified.
 
+## Second visual-parity implementation pass
+- Added the Aurora modal navigation drawer with branded header, authenticated-state pill and four workspace destinations.
+- Added animated fade/slide transitions between Gateway sections.
+- Added the floating Aurora wait panel with pulsing mark, indeterminate cyan sweep rail and spinner; it does not display fabricated percentage progress.
+- Exposed the main app's reduced-motion preference helper to the Gateway loading component.
+- Reused the original brand mark in both toolbar and drawer.
+
 ## Still required before claiming visual parity
 - CI validation of the new Compose implementation.
 - Copy/use the original DevMonitor app icon and verify the launcher/screen branding.
