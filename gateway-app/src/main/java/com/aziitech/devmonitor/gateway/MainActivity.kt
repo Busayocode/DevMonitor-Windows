@@ -3,6 +3,8 @@ package com.aziitech.devmonitor.gateway
 import android.os.Bundle
 import android.os.Build
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -67,9 +69,6 @@ class MainActivity : ComponentActivity() {
                     FirebaseAuth.getInstance().signInWithCredential(credential).await()
                     firebaseTokens.getIdToken(forceRefresh = true)
                     signedIn = FirebaseAuth.getInstance().currentUser != null
-        controllerUrl = getSharedPreferences(GatewayForegroundService.PREFERENCES, MODE_PRIVATE)
-            .getString(GatewayForegroundService.KEY_CONTROLLER_URL, "").orEmpty()
-        workerState = GatewayForegroundService.readState(this)
                     status = "Google sign-in successful. Firebase identity is ready; its token is not displayed or stored."
                 } catch (error: Exception) {
                     status = "Firebase sign-in failed: ${error.localizedMessage ?: "Unknown error"}"
@@ -86,6 +85,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         signedIn = FirebaseAuth.getInstance().currentUser != null
+        controllerUrl = getSharedPreferences(GatewayForegroundService.PREFERENCES, MODE_PRIVATE)
+            .getString(GatewayForegroundService.KEY_CONTROLLER_URL, "").orEmpty()
+        workerState = GatewayForegroundService.readState(this)
         lifecycleScope.launch {
             try {
                 val saved = withContext(Dispatchers.IO) { credentialStore.load() }
@@ -124,6 +126,31 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    private val workerStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            if (intent?.action == GatewayForegroundService.ACTION_STATE_CHANGED) {
+                workerState = intent.getStringExtra(GatewayForegroundService.EXTRA_STATE)
+                    ?: GatewayForegroundService.readState(this@MainActivity)
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val filter = IntentFilter(GatewayForegroundService.ACTION_STATE_CHANGED)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(workerStateReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(workerStateReceiver, filter)
+        }
+    }
+
+    override fun onStop() {
+        runCatching { unregisterReceiver(workerStateReceiver) }
+        super.onStop()
     }
 
     override fun onResume() {
