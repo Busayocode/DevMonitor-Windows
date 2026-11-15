@@ -39,6 +39,8 @@ jobs:
           sed 's/^package com\.aziitech\.simregmonitor$/package com.aziitech.devmonitor.gateway.ui/' \
             extracted/app/src/main/java/com/aziitech/simregmonitor/StateComponents.kt \
             > gateway-app/src/main/java/com/aziitech/devmonitor/gateway/ui/StateComponents.kt
+          mkdir -p gateway-app/src/main/res/drawable-nodpi
+          cp extracted/app/src/main/res/drawable-nodpi/devmonitor_icon.png gateway-app/src/main/res/drawable-nodpi/devmonitor_icon.png
           cat > gateway-app/src/main/java/com/aziitech/devmonitor/gateway/ui/GatewayAuroraTheme.kt <<'EOF'
           package com.aziitech.devmonitor.gateway.ui
 
@@ -102,7 +104,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add gateway-app/src/main/java/com/aziitech/devmonitor/gateway/ui
+          git add gateway-app/src/main/java/com/aziitech/devmonitor/gateway/ui gateway-app/src/main/res/drawable-nodpi/devmonitor_icon.png
           if git diff --cached --quiet; then
             echo "No UI source changes to commit."
           else
