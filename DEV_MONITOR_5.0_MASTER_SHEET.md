@@ -344,4 +344,21 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - The callback atomically updates the durable SQLite job + attempt: Android success moves SENDING to AWAITING_REPLY; failure moves the attempt to SEND_FAILED and job to FAILED. Stale/duplicate callbacks are ignored. No automatic retry occurs.
 - Android's successful SMS_SENT result is not proof of 3030 receipt or processing.
 - The sender/callback are still not wired into a live controller-authorized worker flow. Controller protocol integration, durable pre-send SENDING transition, worker recovery, reply correlation, response timeout and measured drain period remain prerequisites.
-- CI run #116 (`43716975054`) is the current integrated build check; do not treat this slice as build-verified until it passes. No physical SIM/SMS test is claimed.
+- Integrated Gateway workflow run #117 (`43717000034`) passed on 15 Nov 2026, including Android build and source packaging. This is CI compile/package validation only; no physical SIM/SMS test is implied. No physical SIM/SMS test is claimed.
+
+
+## 24. Gateway sender/callback CI verification and integration gate — 15 Nov 2026
+
+- [x] Integrated Gateway workflow #117 (`43717000034`) passed on branch `devmonitor-5.0-gateway-android-download`, commit `638744dd995726a6dfe91cb6f54a308bf1b0ee39`.
+- [x] Android build and source-package job completed successfully; the prior superseded run #116 was cancelled by the newer push and is not a failure.
+- [x] Source review confirms the foreground service remains heartbeat-only; no claim/send loop is active.
+- [x] Source review confirms `GatewayWorkerControllerClient.markSending` first receives controller acceptance, then persists the local job/attempt as SENDING. The sender independently blocks unless its caller supplies that acceptance.
+- [x] The SMS_SENT callback persists only the local Android platform outcome. It does not yet notify the controller or establish 3030 receipt.
+- [ ] Implement a controller-aware worker coordinator that calls markSending, persists/revalidates the selected SIM, creates the attempt-specific PendingIntent, and submits exactly one SMS.
+- [ ] Reconcile callback outcomes with controller state using only endpoints/actions actually supported by the deployed controller; do not invent a send-failed endpoint.
+- [ ] Restore active transaction/inbox state after process death before accepting any 3030 message.
+- [ ] Configure a measured response timeout and post-reply quiet period. The 10-second unit-test fixture is not a production value.
+- [ ] Add deterministic tests for send success/failure, duplicate/stale callback, process restart, lease expiry and controller/local-state disagreement.
+- [ ] Run controlled physical-device tests with the selected Glo SIM and a redacted real 3030 response before enabling queue execution.
+
+**Current operational boundary:** sender and callback primitives compile, but the foreground service still reports SMS/telephony readiness as false and does not claim or execute jobs. No live SMS capability is claimed.
