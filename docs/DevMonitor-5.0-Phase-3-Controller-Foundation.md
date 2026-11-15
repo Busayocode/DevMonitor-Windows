@@ -85,7 +85,7 @@ The OpenAPI contract and reference handlers cover:
 ## What is not yet implemented
 
 - No deployed HTTPS service. The reference FastAPI handlers are source-only and still require environment configuration, deployment hardening and integration tests.
-- Firebase Authentication is selected, and the FastAPI service now verifies Firebase ID tokens. The existing `Fieldpulse` Firebase project still needs its Authentication feature and sign-in provider checked/enabled in Firebase Console; no project settings have been changed yet.
+- Firebase Authentication is selected, and the FastAPI service verifies Firebase ID tokens. The separate Gateway Android app registration, app-specific configuration and signing fingerprint have been set up on `devmonitor-5.0-gateway-android-download`. The Gateway debug APK CI build passed; real-device sign-in and live controller-token integration tests remain pending.
 - No PostgreSQL instance, hosting provider, cloud project or paid service has been provisioned.
 - GitHub Actions run [#10](https://github.com/Busayocode/DevMonitor-Windows/actions/runs/43427348246) successfully applied V001–V006 to PostgreSQL 16 and passed the first database smoke suite. The suite exercised personal gateway priority, reservation from pool workers, tenant round-robin, result persistence, safe pre-send requeue, post-send ambiguity/quarantine and operator recovery. A follow-up stale-cache test is now being added.
 - Cross-process contention/load tests, identity-provider tests, full restart recovery and live gateway-phone tests have not yet run.
