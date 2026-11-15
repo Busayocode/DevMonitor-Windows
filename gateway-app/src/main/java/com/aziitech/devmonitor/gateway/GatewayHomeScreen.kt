@@ -90,6 +90,8 @@ fun GatewayHomeScreen(
     onTestController: () -> Unit,
     onRegisterGateway: () -> Unit,
     workerState: String,
+    batteryOptimizationIgnored: Boolean,
+    onOpenBatterySettings: () -> Unit,
     onStartWorker: () -> Unit,
     onStopWorker: () -> Unit
 ) {
@@ -269,7 +271,7 @@ fun GatewayHomeScreen(
                                 onVerifyToken, onTestController, onRegisterGateway
                             )
                             1 -> GatewayQueueContent()
-                            2 -> GatewayPhoneContent(workerState, gatewayId, controllerUrl, onStartWorker, onStopWorker)
+                            2 -> GatewayPhoneContent(workerState, gatewayId, controllerUrl, batteryOptimizationIgnored, onOpenBatterySettings, onStartWorker, onStopWorker)
                             else -> GatewayAccountContent(signedIn, gatewayId, busy, onVerifyToken)
                         }
                         Spacer(Modifier.height(8.dp))
@@ -419,6 +421,8 @@ private fun GatewayPhoneContent(
     workerState: String,
     gatewayId: String?,
     controllerUrl: String,
+    batteryOptimizationIgnored: Boolean,
+    onOpenBatterySettings: () -> Unit,
     onStartWorker: () -> Unit,
     onStopWorker: () -> Unit
 ) {
@@ -451,6 +455,29 @@ private fun GatewayPhoneContent(
         ) { Text("Stop Gateway service") }
         Text(
             "Pause, resume and stop controls are also available in the persistent notification while the service is active.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+    AuroraGlassCard(Modifier.fillMaxWidth(), AuroraBlue) {
+        Text("Battery optimisation", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        AuroraStatusPill(
+            if (batteryOptimizationIgnored) "NOT RESTRICTED" else "BATTERY OPTIMISATION ON",
+            if (batteryOptimizationIgnored) AuroraEmerald else AuroraCyan
+        )
+        Text(
+            if (batteryOptimizationIgnored)
+                "Android reports that this app is exempt from standard battery optimisation. Device-manufacturer background limits may still apply."
+            else
+                "Battery optimisation may delay background work or heartbeat delivery when the phone is idle. For a dedicated Gateway phone, review Android's battery settings and decide whether to exempt this app.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        DevMonitorOutlinedButton(
+            onClick = onOpenBatterySettings,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Open battery optimisation settings") }
+        Text(
+            "This opens Android's settings list; you make the choice yourself. It does not grant an exemption automatically or guarantee uninterrupted operation.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall
         )
