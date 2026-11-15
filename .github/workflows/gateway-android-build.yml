@@ -1,0 +1,87 @@
+name: Gateway 5.0 Android Build
+
+on:
+  push:
+    branches:
+      - devmonitor-5.0-gateway-android-download
+    paths:
+      - "gateway-app/**"
+      - "gateway-auth-android/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradle/**"
+      - "gradlew"
+      - ".github/workflows/gateway-android-build.yml"
+  pull_request:
+    branches:
+      - devmonitor-5.0-gateway-android-download
+    paths:
+      - "gateway-app/**"
+      - "gateway-auth-android/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradle/**"
+      - "gradlew"
+      - ".github/workflows/gateway-android-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-5-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and build Gateway APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Gateway source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-35"
+
+      - name: Verify Firebase configuration
+        run: |
+          test -s gateway-app/google-services.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          config = json.loads(Path("gateway-app/google-services.json").read_text())
+          packages = {
+              client.get("client_info", {}).get("android_client_info", {}).get("package_name")
+              for client in config.get("client", [])
+          }
+          expected = "com.aziitech.devmonitor.gateway"
+          if expected not in packages:
+              raise SystemExit(f"Firebase config is missing Android package {expected}")
+          print(f"Firebase config verified for {expected}")
+          PY
+
+      - name: Run Firebase authentication unit tests and build APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon \
+            :gateway-auth-android:testDebugUnitTest \
+            :gateway-auth-android:assembleDebug \
+            :gateway-app:assembleDebug
+
+      - name: Upload Gateway debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Gateway-5.0-debug
+          path: gateway-app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
