@@ -183,6 +183,12 @@ once('''        val carrier = sim.carrierName?.toString()?.takeIf { it.isNotBlan
         return "SIM ${sim.simSlotIndex + 1} • $carrier$gloTag"
 ''', "Glo selector label")
 
+old_note = 'whatsNewHighlights = listOf("Track active checks and data operations from Android notifications, with pause and stop controls for SMS Checker.")'
+new_note = 'whatsNewHighlights = listOf("Automatically select a ready Glo SIM for SMS Checker, with manual SIM override and safer SIM routing.")'
+if s.count(old_note) != 2:
+    raise SystemExit("Expected both v351 What's New entry points before adding the Glo SIM release note.")
+s = s.replace(old_note, new_note)
+
 if "SubscriptionManager.getDefaultSmsSubscriptionId()" in s or "SmsManager.getDefault()" in s:
     raise SystemExit("Unsafe default-SIM fallback remains in MainActivity.")
 if "createForSubscriptionId(subscriptionId)" not in s:
