@@ -27,11 +27,8 @@ jobs:
             "https://raw.githubusercontent.com/Busayocode/DevMonitor-Windows/development/DevMonitor-An-v337-4.7.0-TARGET-KOTLIN-RECHECK-CONTINUE-FIX.zip" \
             -o DevMonitor-An-v337-reference.zip
           unzip -t DevMonitor-An-v337-reference.zip
-          mkdir reference-source
-          unzip -q DevMonitor-An-v337-reference.zip -d reference-source
-          unzip -t reference-source/DevMonitor-An-v337-reference.zip
           mkdir extracted
-          unzip -q reference-source/DevMonitor-An-v337-reference.zip -d extracted
+          unzip -q DevMonitor-An-v337-reference.zip -d extracted
 
       - name: Port the original DevMonitor Aurora components into Gateway-owned UI package
         run: |
@@ -119,5 +116,5 @@ jobs:
           name: DevMonitor-Main-UI-Reference-v337
           path: |
             DevMonitor-An-v337-reference.zip
-            reference-source/DevMonitor-An-v337-reference.zip
+            archive-manifest.txt
           retention-days: 3
