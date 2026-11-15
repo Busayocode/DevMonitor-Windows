@@ -335,3 +335,13 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - Inbox decisions are persisted. A matched result is staged as `ACCEPTED_PENDING_CONTROLLER`, not submitted to the controller.
 - Processing remains an explicit worker-stage API and is not automatically invoked by the broadcast receiver. No outbound SMS, controller result submission, retry or queue advancement is enabled.
 - CI run is pending. Actual 3030 message formatting must still be checked against a redacted live sample; exact carrier date formatting remains unnormalized.
+
+
+## 23. Subscription-pinned SMS sender and durable send-result callback — 15 Nov 2026
+
+- Added a subscription-specific `SmsManager` sender primitive targeting only short code `3030`; it requires explicit controller `SENDING` acceptance, an explicit selected subscription ID, SEND_SMS + READ_PHONE_STATE permissions, active-subscription membership and SIM READY checks immediately before submission. There is no default-SIM fallback.
+- Added attempt-specific, package-bound `SMS_SENT` PendingIntent creation and a private, non-exported result receiver.
+- The callback atomically updates the durable SQLite job + attempt: Android success moves SENDING to AWAITING_REPLY; failure moves the attempt to SEND_FAILED and job to FAILED. Stale/duplicate callbacks are ignored. No automatic retry occurs.
+- Android's successful SMS_SENT result is not proof of 3030 receipt or processing.
+- The sender/callback are still not wired into a live controller-authorized worker flow. Controller protocol integration, durable pre-send SENDING transition, worker recovery, reply correlation, response timeout and measured drain period remain prerequisites.
+- CI run #116 (`43716975054`) is the current integrated build check; do not treat this slice as build-verified until it passes. No physical SIM/SMS test is claimed.
