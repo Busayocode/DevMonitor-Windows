@@ -80,11 +80,15 @@ fun GatewayHomeScreen(
     signedIn: Boolean,
     status: String,
     controllerUrl: String,
+    gatewayDisplayName: String,
+    gatewayId: String?,
     busy: Boolean,
     onControllerUrlChange: (String) -> Unit,
+    onGatewayDisplayNameChange: (String) -> Unit,
     onSignIn: () -> Unit,
     onVerifyToken: () -> Unit,
-    onTestController: () -> Unit
+    onTestController: () -> Unit,
+    onRegisterGateway: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val navLabels = remember { listOf("Overview", "Queue", "Gateway", "Account") }
@@ -257,12 +261,13 @@ fun GatewayHomeScreen(
                     ) {
                         when (tab) {
                             0 -> GatewayOverviewContent(
-                                signedIn, status, controllerUrl, busy,
-                                onControllerUrlChange, onSignIn, onVerifyToken, onTestController
+                                signedIn, status, controllerUrl, gatewayDisplayName, gatewayId, busy,
+                                onControllerUrlChange, onGatewayDisplayNameChange, onSignIn,
+                                onVerifyToken, onTestController, onRegisterGateway
                             )
                             1 -> GatewayQueueContent()
                             2 -> GatewayPhoneContent()
-                            else -> GatewayAccountContent(signedIn, busy, onVerifyToken)
+                            else -> GatewayAccountContent(signedIn, gatewayId, busy, onVerifyToken)
                         }
                         Spacer(Modifier.height(8.dp))
                     }
@@ -289,11 +294,15 @@ private fun GatewayOverviewContent(
     signedIn: Boolean,
     status: String,
     controllerUrl: String,
+    gatewayDisplayName: String,
+    gatewayId: String?,
     busy: Boolean,
     onControllerUrlChange: (String) -> Unit,
+    onGatewayDisplayNameChange: (String) -> Unit,
     onSignIn: () -> Unit,
     onVerifyToken: () -> Unit,
-    onTestController: () -> Unit
+    onTestController: () -> Unit,
+    onRegisterGateway: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         AuroraHero(
@@ -344,8 +353,8 @@ private fun GatewayOverviewContent(
         }
         AuroraSectionHeader(
             eyebrow = "Controller connection",
-            title = "Connect to the Gateway controller",
-            subtitle = "Controller registration will be enabled after the backend is deployed."
+            title = "Register this Gateway phone",
+            subtitle = "Create this phone's separate worker identity using your signed-in Firebase account."
         )
         AuroraGlassCard(Modifier.fillMaxWidth(), AuroraCyan) {
             Text("Controller endpoint", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -357,7 +366,23 @@ private fun GatewayOverviewContent(
                 label = { Text("HTTPS base URL") },
                 placeholder = { Text("https://controller.example") }
             )
+            androidx.compose.material3.OutlinedTextField(
+                value = gatewayDisplayName,
+                onValueChange = onGatewayDisplayNameChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Gateway phone name") },
+                placeholder = { Text("e.g. Office Gateway 1") },
+                enabled = gatewayId == null && !busy
+            )
             DevMonitorButton(
+                onClick = onRegisterGateway,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = signedIn && gatewayId == null && controllerUrl.isNotBlank() && gatewayDisplayName.isNotBlank() && !busy
+            ) {
+                Text(if (gatewayId == null) "Register this Gateway phone" else "Gateway registered")
+            }
+            DevMonitorOutlinedButton(
                 onClick = onTestController,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = signedIn && controllerUrl.isNotBlank() && !busy
@@ -392,11 +417,13 @@ private fun GatewayPhoneContent() {
 }
 
 @Composable
-private fun GatewayAccountContent(signedIn: Boolean, busy: Boolean, onVerifyToken: () -> Unit) {
+private fun GatewayAccountContent(signedIn: Boolean, gatewayId: String?, busy: Boolean, onVerifyToken: () -> Unit) {
     AuroraSectionHeader("Account", "Gateway ownership", "Your Gateway identity and security controls.")
     AuroraGlassCard(Modifier.fillMaxWidth(), AuroraViolet) {
-        AuroraStatusPill(if (signedIn) "AUTHENTICATED" else "SIGN-IN REQUIRED", if (signedIn) AuroraEmerald else AuroraCyan)
-        Text("This phone will only receive jobs authorized for the signed-in account or explicitly enabled shared-pool participation.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AuroraStatusPill(if (gatewayId != null) "REGISTERED" else if (signedIn) "AUTHENTICATED — NOT REGISTERED" else "SIGN-IN REQUIRED", if (gatewayId != null) AuroraEmerald else AuroraCyan)
+        Text("Gateway ID", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        Text(gatewayId ?: "Not registered", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("The private controller credential is encrypted with Android Keystore and is never displayed. This phone will only receive jobs authorized for its registered identity.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         DevMonitorOutlinedButton(onClick = onVerifyToken, modifier = Modifier.fillMaxWidth(), enabled = signedIn && !busy) {
             Text("Verify account session")
         }
