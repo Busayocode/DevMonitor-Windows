@@ -254,6 +254,38 @@ class SqliteSmsChannelStateStore(context: Context) : SmsChannelStateStore {
     private fun JSONObject.nullable(key: String): String? =
         if (!has(key) || isNull(key)) null else optString(key).takeIf(String::isNotBlank)
 
+
+    /** Returns every locally unresolved dispatch so restart recovery can detect orphaned work. */
+    @Synchronized
+    fun loadUnresolvedDispatches(): List<GatewayUnresolvedDispatch> {
+        val db = helper.readableDatabase
+        val jobs = db.rawQuery("SELECT record_json FROM gateway_jobs", null).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(decodeJob(cursor.getString(0)))
+            }
+        }.associateBy { it.jobId }
+        val attempts = db.rawQuery("SELECT record_json FROM gateway_attempts", null).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(decodeAttempt(cursor.getString(0)))
+            }
+        }
+        val unresolvedStates = setOf(
+            GatewayAttemptState.LEASED,
+            GatewayAttemptState.SENDING,
+            GatewayAttemptState.AWAITING_REPLY,
+            GatewayAttemptState.SEND_FAILED,
+            GatewayAttemptState.TIMED_OUT,
+            GatewayAttemptState.AMBIGUOUS
+        )
+        return attempts.asSequence()
+            .filter { it.state in unresolvedStates }
+            .mapNotNull { attempt ->
+                val job = jobs[attempt.jobId] ?: return@mapNotNull null
+                GatewayUnresolvedDispatch(job, attempt)
+            }
+            .toList()
+    }
+
     fun close() = helper.close()
 
     private fun encode(snapshot: SmsChannelSnapshot): String {
