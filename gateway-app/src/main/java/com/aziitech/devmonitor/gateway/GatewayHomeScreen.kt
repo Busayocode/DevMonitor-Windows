@@ -46,6 +46,7 @@ import com.aziitech.devmonitor.gateway.ui.AuroraMetricCard
 import com.aziitech.devmonitor.gateway.ui.AuroraNavy
 import com.aziitech.devmonitor.gateway.ui.AuroraSectionHeader
 import com.aziitech.devmonitor.gateway.ui.AuroraStatusPill
+import com.aziitech.devmonitor.gateway.ui.AuroraViolet
 import com.aziitech.devmonitor.gateway.ui.DevMonitorButton
 import com.aziitech.devmonitor.gateway.ui.DevMonitorLoadingState
 import com.aziitech.devmonitor.gateway.ui.DevMonitorNavGlyph
