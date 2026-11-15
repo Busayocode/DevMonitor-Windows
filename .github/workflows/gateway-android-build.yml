@@ -39,6 +39,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  package-source:
+    name: Package Gateway source ZIP with master sheet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Gateway source
+        uses: actions/checkout@v4
+
+      - name: Create source ZIP
+        run: |
+          zip -r DevMonitor-Gateway-5.0-Source.zip . \
+            -x ".git/*" "*/build/*" "*/.gradle/*" ".gradle/*" \
+               "local.properties" ".idea/*" "*/.idea/*" \
+               "DevMonitor-Gateway-5.0-Source.zip"
+
+      - name: Upload Gateway source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevMonitor-Gateway-5.0-Source
+          path: DevMonitor-Gateway-5.0-Source.zip
+          if-no-files-found: error
+          retention-days: 14
+
   build:
     name: Test and build Gateway APK
     runs-on: ubuntu-latest
@@ -81,21 +103,6 @@ jobs:
             :gateway-auth-android:testDebugUnitTest \
             :gateway-auth-android:assembleDebug \
             :gateway-app:assembleDebug
-
-      - name: Package Gateway source ZIP with master sheet
-        run: |
-          zip -r DevMonitor-Gateway-5.0-Source.zip . \
-            -x ".git/*" "*/build/*" "*/.gradle/*" ".gradle/*" \
-               "local.properties" ".idea/*" "*/.idea/*" \
-               "DevMonitor-Gateway-5.0-Source.zip"
-
-      - name: Upload Gateway source ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: DevMonitor-Gateway-5.0-Source
-          path: DevMonitor-Gateway-5.0-Source.zip
-          if-no-files-found: error
-          retention-days: 14
 
       - name: Upload Gateway debug APK
         uses: actions/upload-artifact@v4
