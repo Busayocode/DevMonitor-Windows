@@ -11,7 +11,8 @@ data class StoredGatewayInboundSms(
     val sender: String,
     val receivedAtMillis: Long,
     val subscriptionId: Int?,
-    val body: String
+    val body: String,
+    val processingState: String
 )
 
 /**
@@ -65,11 +66,27 @@ class GatewayInboundSmsStore(context: Context) {
     }
 
     @Synchronized
+    fun markDecision(fingerprint: String, state: String, note: String? = null): Boolean {
+        require(fingerprint.isNotBlank())
+        require(state in setOf(
+            "ACCEPTED_PENDING_CONTROLLER", "UNASSIGNED_INVALID", "UNASSIGNED_NO_TRANSACTION",
+            "UNASSIGNED_LATE", "UNASSIGNED_DRAINING", "DUPLICATE", "QUARANTINED"
+        ))
+        val values = ContentValues().apply {
+            put("processing_state", state)
+            if (note.isNullOrBlank()) putNull("decision_note") else put("decision_note", note.take(240))
+        }
+        return helper.writableDatabase.update(
+            "inbound_3030", values, "fingerprint = ?", arrayOf(fingerprint)
+        ) == 1
+    }
+
+    @Synchronized
     fun loadUnassigned(limit: Int = 50): List<StoredGatewayInboundSms> {
         val safeLimit = limit.coerceIn(1, MAX_ROWS)
         val rows = ArrayList<StoredGatewayInboundSms>()
         helper.readableDatabase.rawQuery(
-            "SELECT fingerprint, sender, received_at, subscription_id, body " +
+            "SELECT fingerprint, sender, received_at, subscription_id, body, processing_state " +
                 "FROM inbound_3030 WHERE processing_state = 'RECEIVED_UNASSIGNED' " +
                 "ORDER BY received_at ASC, row_id ASC LIMIT ?",
             arrayOf(safeLimit.toString())
@@ -80,7 +97,8 @@ class GatewayInboundSmsStore(context: Context) {
                     sender = cursor.getString(1),
                     receivedAtMillis = cursor.getLong(2),
                     subscriptionId = if (cursor.isNull(3)) null else cursor.getInt(3),
-                    body = cursor.getString(4)
+                    body = cursor.getString(4),
+                    processingState = cursor.getString(5)
                 )
             }
         }
@@ -108,18 +126,23 @@ class GatewayInboundSmsStore(context: Context) {
                     received_at INTEGER NOT NULL,
                     subscription_id INTEGER,
                     body TEXT NOT NULL,
-                    processing_state TEXT NOT NULL
+                    processing_state TEXT NOT NULL,
+                    decision_note TEXT
                 )
                 """.trimIndent()
             )
             db.execSQL("CREATE INDEX idx_inbound_3030_state_time ON inbound_3030(processing_state, received_at)")
         }
 
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            if (oldVersion < 2) {
+                db.execSQL("ALTER TABLE inbound_3030 ADD COLUMN decision_note TEXT")
+            }
+        }
 
         companion object {
             private const val DATABASE_NAME = "devmonitor_gateway_inbox.db"
-            private const val DATABASE_VERSION = 1
+            private const val DATABASE_VERSION = 2
             const val MAX_ROWS = 200
         }
     }
