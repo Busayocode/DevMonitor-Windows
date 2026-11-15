@@ -149,6 +149,17 @@ class GatewaySmsTransactionGate(
         return true
     }
 
+    /** Permanently blocks the channel after a pre-send or send-result uncertainty. */
+    @Synchronized
+    fun quarantine(reason: String) {
+        require(reason.isNotBlank())
+        val current = store.load()
+        store.save(current.copy(
+            state = SmsChannelState.QUARANTINED,
+            lastResolutionNote = "Automatic safety quarantine: ${reason.take(180)}"
+        ))
+    }
+
     @Synchronized
     fun resolveQuarantineByOperator(
         operatorId: String,
