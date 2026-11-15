@@ -2,7 +2,7 @@
 
 **Branch:** `devmonitor-5.0-gateway-android-download`  
 **Date:** 15 November 2026  
-**Status:** Implemented in source; CI validation pending. No live SMS test or controller result submission is claimed.
+**Status:** Implemented in source; final integrated CI validation is running. No live SMS test or controller result submission is claimed.
 
 ## What this slice adds
 
