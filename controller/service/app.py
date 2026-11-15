@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime
 from typing import Any
@@ -259,10 +260,18 @@ def verify_firebase_id_token(token: str, project_id: str, key_client: PyJWKClien
     )
     subject = claims.get("sub")
     auth_time = claims.get("auth_time")
+    issued_at = claims.get("iat")
     if not isinstance(subject, str) or not subject or len(subject) > 128:
         raise ValueError("Firebase token has an invalid UID")
-    if not isinstance(auth_time, int) or auth_time <= 0:
+    if not isinstance(auth_time, int) or isinstance(auth_time, bool) or auth_time <= 0:
         raise ValueError("Firebase token has an invalid authentication time")
+    if not isinstance(issued_at, int) or isinstance(issued_at, bool):
+        raise ValueError("Firebase token has an invalid issued-at time")
+    # Firebase auth_time must describe an authentication event no later than
+    # token issuance. Allow a small clock-skew margin, but reject future-dated
+    # claims that could otherwise pass signature/audience/expiry validation.
+    if auth_time > issued_at + 60 or auth_time > int(time.time()) + 60:
+        raise ValueError("Firebase token authentication time is in the future")
     return claims
 
 
