@@ -375,3 +375,16 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - Added explicit transaction-gate quarantine operation and a unit test proving new work remains blocked until operator resolution.
 - **Not yet operational:** foreground service still does not claim or dispatch jobs; callback reconciliation is not scheduled; active transaction/inbox restoration and controller result submission are not integrated. The caller-supplied response timeout and post-reply quiet period require measured carrier evidence.
 - CI for this commit sequence is pending. No physical SIM or real 3030 exchange is claimed.
+
+## 26. Restart recovery policy and identity hardening — 15 Nov 2026
+
+- [x] Gateway workflow #130 (`43718884534`) passed on commit `5c360283e1e9e3b17b1e409aeb6554f200f78c18`. Both Android test/build and source-package jobs completed successfully.
+- [x] Added a pure worker-core recovery assessment for controller/local state after process restart. It distinguishes no work, eligible leased work, successful-send callback reconciliation, reply-wait resumption and quarantine.
+- [x] Recovery never retransmits an uncertain `SENDING` attempt. A matching durable Android success callback can be reconciled without resending; reply intake can resume only when controller, local ledger and active transaction agree.
+- [x] Hardened identity checks to verify the local attempt's owning job as well as controller job/attempt IDs; added a regression test for a mismatched attempt owner.
+- [ ] Build and verify the identity-hardening follow-up commit now queued by this change.
+- [ ] Add a production adapter that snapshots controller state, local SQLite job/attempt state, encrypted lease-token availability and restored channel state, then invokes this policy before any worker action.
+- [ ] Restore and reconcile the persisted channel transaction and inbox after process death; prove the restore sequence is atomic and fail-closed.
+- [ ] Keep foreground service heartbeat-only until the recovery adapter, controller reconciliation and controlled physical-device tests are complete.
+
+**Current operational boundary:** recovery assessment is tested as a pure policy, but it is not yet wired into service startup or a live dispatch loop. No live SMS execution, automatic retry, 3030 correlation or process-restart recovery is claimed. Physical SIM testing and a redacted real 3030 response sample remain outstanding.
