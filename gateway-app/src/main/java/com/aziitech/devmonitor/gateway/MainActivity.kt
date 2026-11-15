@@ -44,6 +44,8 @@ class MainActivity : ComponentActivity() {
     private var phoneStatePermissionGranted by mutableStateOf(false)
     private var activeSimCount by mutableStateOf(0)
     private var readySimCount by mutableStateOf(0)
+    private var availableGatewaySims by mutableStateOf<List<GatewaySimOption>>(emptyList())
+    private var selectedSimSubscriptionId by mutableStateOf<Int?>(null)
     private val firebaseTokens by lazy { FirebaseAuthIdTokenProvider() }
     private val credentialStore by lazy { AndroidGatewayCredentialStore(applicationContext) }
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -142,6 +144,9 @@ class MainActivity : ComponentActivity() {
                     phoneStatePermissionGranted = phoneStatePermissionGranted,
                     activeSimCount = activeSimCount,
                     readySimCount = readySimCount,
+                    availableGatewaySims = availableGatewaySims,
+                    selectedSimSubscriptionId = selectedSimSubscriptionId,
+                    onSelectGatewaySim = { subscriptionId -> selectGatewaySim(subscriptionId) },
                     onRequestSmsReadiness = { requestSmsReadiness() },
                     onOpenBatterySettings = { openBatteryOptimizationSettings() },
                     onStartWorker = { requestGatewayWorkerStart() },
@@ -229,23 +234,58 @@ class MainActivity : ComponentActivity() {
         smsPermissionsGranted = sendGranted && receiveGranted
         activeSimCount = 0
         readySimCount = 0
-        if (!phoneStatePermissionGranted) return
+        availableGatewaySims = emptyList()
+        if (!phoneStatePermissionGranted) {
+            selectedSimSubscriptionId = null
+            return
+        }
         runCatching {
             val subscriptions = getSystemService(TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
             val active = subscriptions.activeSubscriptionInfoList.orEmpty()
             activeSimCount = active.size
             val telephony = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
-            readySimCount = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                active.count { info ->
-                    telephony.createForSubscriptionId(info.subscriptionId).simState == TelephonyManager.SIM_STATE_READY
+            val options = active.map { info ->
+                val state = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    telephony.createForSubscriptionId(info.subscriptionId).simState
+                } else {
+                    telephony.simState
                 }
-            } else {
-                if (active.isNotEmpty() && telephony.simState == TelephonyManager.SIM_STATE_READY) 1 else 0
+                GatewaySimOption(
+                    subscriptionId = info.subscriptionId,
+                    slotIndex = info.simSlotIndex,
+                    carrierName = info.carrierName?.toString()?.takeIf { it.isNotBlank() } ?: "Unknown carrier",
+                    ready = state == TelephonyManager.SIM_STATE_READY
+                )
+            }
+            availableGatewaySims = options
+            readySimCount = options.count { it.ready }
+            val savedId = getSharedPreferences("devmonitor_gateway_sim", MODE_PRIVATE)
+                .getInt("selected_subscription_id", Int.MIN_VALUE)
+                .takeIf { it != Int.MIN_VALUE }
+            selectedSimSubscriptionId = savedId?.takeIf { id -> options.any { it.subscriptionId == id } }
+            if (selectedSimSubscriptionId == null) {
+                getSharedPreferences("devmonitor_gateway_sim", MODE_PRIVATE).edit()
+                    .remove("selected_subscription_id").apply()
             }
         }.onFailure {
             activeSimCount = 0
             readySimCount = 0
+            availableGatewaySims = emptyList()
+            selectedSimSubscriptionId = null
         }
+    }
+
+    private fun selectGatewaySim(subscriptionId: Int) {
+        val option = availableGatewaySims.firstOrNull { it.subscriptionId == subscriptionId }
+        if (option == null || !option.ready) {
+            status = "That SIM is no longer available or is not ready. Refresh SIM status and choose an available SIM."
+            refreshSmsReadiness()
+            return
+        }
+        selectedSimSubscriptionId = subscriptionId
+        getSharedPreferences("devmonitor_gateway_sim", MODE_PRIVATE).edit()
+            .putInt("selected_subscription_id", subscriptionId).apply()
+        status = "SIM ${option.slotIndex + 1} (${option.carrierName}) selected for future Gateway SMS operations. No SMS was sent."
     }
 
 
