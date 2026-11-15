@@ -37,7 +37,7 @@ The Android prototype ZIP does not contain the complete controller or the future
 | Firebase token verification | **Implemented in reference service** | Controller verifies Firebase ID-token claims against configured project; production identity integration still pending |
 | Gateway Android auth/client prototype | **Build passed** | Run #43681725883 succeeded on 15 Nov 2026; Firebase config check, unit tests, APK build and artifact upload passed |
 | Firebase app registration/config | **Configured in prototype branch** | Separate package `com.aziitech.devmonitor.gateway`, app-specific config and matching signing fingerprint were checked by CI; real-device sign-in still needs explicit confirmation |
-| APK build artifact | **Available** | `DevMonitor-Gateway-5.0-debug`, approximately 4.33 MB, Actions artifact expires 29 Nov 2026 |
+| APK build artifact | **Available** | `DevMonitor-Gateway-5.0-debug`, approximately 4.33 MB, Actions artifact expires 29 Nov 2026 |\n| Gateway worker-core CI | **Passed** | Run #43682711793: `:gateway-worker-core:test` and APK build job succeeded; source ZIP packaging also succeeded |
 
 ### What the successful APK build proves
 
@@ -55,7 +55,7 @@ It does **not** prove live Google/Firebase sign-in, a successful request to a de
 - [ ] Verify authenticated client calls against a controlled HTTPS test controller when one is approved and available.
 
 ### B. Dedicated Android Gateway phone worker
-- [x] Add isolated Kotlin transaction-safety core with tests (Android persistence adapter and CI validation pending).
+- [x] Add isolated Kotlin transaction-safety core with tests; GitHub CI passed in run #43682711793.\n- [ ] Implement the durable Android persistence adapter; the current test store is in-memory only.
 - [ ] Create the actual worker app/service; the current APK is only an ordinary client/auth prototype.
 - [ ] Register a dedicated phone installation and securely store its revocable credential.
 - [ ] Implement controller-assigned job receipt and health heartbeats.
@@ -128,13 +128,13 @@ It does **not** prove live Google/Firebase sign-in, a successful request to a de
 
 1. Verify real Google/Firebase sign-in on the current Gateway APK.
 2. Complete controller integration/security tests on an isolated test database; no paid deployment yet.
-3. Complete worker-core CI and implement durable Android transaction-state persistence before selecting the compliant foreground-service type.
+3. Worker-core CI is now passed (run #43682711793); implement durable Android transaction-state persistence before selecting the compliant foreground-service type.
 4. Connect one worker to a test controller and run one controlled 3030 transaction with ambiguity protection.
 5. Add a second worker and validate queue assignment, isolation and recovery.
 6. Integrate the Gateway transport into the separate Gateway edition and run permission/regression checks.
 7. Expand to three or more workers, then review release readiness and infrastructure cost.
 
-## 8. Evidence and status discipline
+## 8. Latest Gateway worker-core CI evidence\n\n- Workflow run: [#11 — 43682711793](https://github.com/Busayocode/DevMonitor-Windows/actions/runs/43682711793)\n- Branch: `devmonitor-5.0-gateway-android-download`\n- Commit: `d03e44b09e472c7ec72fe2e54ac3e204b7e48f78`\n- Result: **success**. The build job ran `:gateway-auth-android:testDebugUnitTest`, `:gateway-worker-core:test`, `:gateway-auth-android:assembleDebug`, and `:gateway-app:assembleDebug`; the source ZIP packaging job also succeeded.\n- Artifacts: `DevMonitor-Gateway-5.0-debug` (~4.33 MB) and `DevMonitor-Gateway-5.0-Source` (~82.6 KB). Both are temporary Actions artifacts, expiring 29 Nov 2026.\n- Scope: automated compile/unit-test/package validation only. No live-device SMS or controller test is implied.\n\n## 9. Evidence and status discipline
 
 Use these labels consistently:
 
