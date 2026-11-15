@@ -88,7 +88,10 @@ fun GatewayHomeScreen(
     onSignIn: () -> Unit,
     onVerifyToken: () -> Unit,
     onTestController: () -> Unit,
-    onRegisterGateway: () -> Unit
+    onRegisterGateway: () -> Unit,
+    workerState: String,
+    onStartWorker: () -> Unit,
+    onStopWorker: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val navLabels = remember { listOf("Overview", "Queue", "Gateway", "Account") }
@@ -266,7 +269,7 @@ fun GatewayHomeScreen(
                                 onVerifyToken, onTestController, onRegisterGateway
                             )
                             1 -> GatewayQueueContent()
-                            2 -> GatewayPhoneContent()
+                            2 -> GatewayPhoneContent(workerState, gatewayId, controllerUrl, onStartWorker, onStopWorker)
                             else -> GatewayAccountContent(signedIn, gatewayId, busy, onVerifyToken)
                         }
                         Spacer(Modifier.height(8.dp))
@@ -408,11 +411,45 @@ private fun GatewayQueueContent() {
 }
 
 @Composable
-private fun GatewayPhoneContent() {
-    AuroraSectionHeader("Phone availability", "Gateway status", "Controls for the dedicated worker phone.")
+private fun GatewayPhoneContent(
+    workerState: String,
+    gatewayId: String?,
+    controllerUrl: String,
+    onStartWorker: () -> Unit,
+    onStopWorker: () -> Unit
+) {
+    val active = workerState == "RUNNING" || workerState == "PAUSED" || workerState == "STARTING"
+    AuroraSectionHeader("Phone availability", "Gateway status", "A user-controlled foreground service keeps the controller heartbeat visible.")
     AuroraGlassCard(Modifier.fillMaxWidth(), AuroraEmerald) {
-        AuroraStatusPill("WORKER NOT RUNNING", AuroraCyan)
-        Text("SMS permissions, SIM readiness, network status and the foreground worker service will be presented here. No SMS is sent by this prototype.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AuroraStatusPill(
+            when (workerState) {
+                "RUNNING" -> "HEARTBEAT ACTIVE"
+                "PAUSED" -> "HEARTBEAT PAUSED"
+                "STARTING" -> "STARTING"
+                else -> "WORKER STOPPED"
+            },
+            if (workerState == "RUNNING") AuroraEmerald else AuroraCyan
+        )
+        Text("Service state: $workerState", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            "This stage sends controller health heartbeats only. SMS permission, SIM readiness, job claiming, SMS sending and SMS receiving are deliberately disabled.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        DevMonitorButton(
+            onClick = onStartWorker,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = gatewayId != null && controllerUrl.startsWith("https://", ignoreCase = true) && !active
+        ) { Text("Start Gateway heartbeat service") }
+        DevMonitorOutlinedButton(
+            onClick = onStopWorker,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = active
+        ) { Text("Stop Gateway service") }
+        Text(
+            "Pause, resume and stop controls are also available in the persistent notification while the service is active.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
     }
 }
 
