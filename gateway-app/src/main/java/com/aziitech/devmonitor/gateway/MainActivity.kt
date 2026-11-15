@@ -288,11 +288,13 @@ class MainActivity : ComponentActivity() {
                 .takeIf { it != Int.MIN_VALUE }
             val mode = prefs.getString("selection_mode", null)
             val savedOption = savedId?.let { id -> options.firstOrNull { it.subscriptionId == id } }
-            val readyGlo = options.filter { it.ready && it.isGlobacom }.minByOrNull { it.slotIndex }
+            val readyGloSubscriptions = options.filter { it.ready && it.isGlobacom }
+            // Auto-select only when exactly one ready Glo SIM exists. Multiple Glo lines require operator choice.
+            val readyGlo = readyGloSubscriptions.singleOrNull()
 
             val chosen = when (mode) {
                 "MANUAL" -> savedOption?.takeIf { it.ready }
-                "AUTO_GLO" -> savedOption?.takeIf { it.ready && it.isGlobacom } ?: readyGlo
+                "AUTO_GLO" -> readyGlo
                 else -> {
                     // Preserve an existing non-Glo selection as a legacy manual choice.
                     if (savedOption != null && savedOption.ready && !savedOption.isGlobacom) {
@@ -300,7 +302,7 @@ class MainActivity : ComponentActivity() {
                         savedOption
                     } else {
                         prefs.edit().putString("selection_mode", "AUTO_GLO").apply()
-                        savedOption?.takeIf { it.ready && it.isGlobacom } ?: readyGlo
+                        readyGlo
                     }
                 }
             }
