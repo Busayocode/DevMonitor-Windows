@@ -129,6 +129,50 @@ class SqliteSmsChannelStateStore(context: Context) : SmsChannelStateStore {
         }
     }
 
+    /**
+     * Applies an Android SMS_SENT callback exactly once to the matching durable
+     * attempt. Late, duplicate, or out-of-order callbacks cannot reopen a job.
+     */
+    @Synchronized
+    fun recordSendResult(attemptId: String, androidResultCode: Int, sentAt: String): Boolean {
+        require(attemptId.isNotBlank() && sentAt.isNotBlank())
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            val attempt = db.rawQuery(
+                "SELECT record_json FROM gateway_attempts WHERE attempt_id = ?",
+                arrayOf(attemptId)
+            ).use { cursor -> if (cursor.moveToFirst()) decodeAttempt(cursor.getString(0)) else null }
+                ?: return false
+            if (attempt.state != GatewayAttemptState.SENDING) return false
+            val job = db.rawQuery(
+                "SELECT record_json FROM gateway_jobs WHERE job_id = ?",
+                arrayOf(attempt.jobId)
+            ).use { cursor -> if (cursor.moveToFirst()) decodeJob(cursor.getString(0)) else null }
+                ?: return false
+            if (job.state != GatewayJobState.SENDING) return false
+
+            val succeeded = androidResultCode == android.app.Activity.RESULT_OK
+            val nextAttempt = attempt.copy(
+                state = if (succeeded) GatewayAttemptState.AWAITING_REPLY else GatewayAttemptState.SEND_FAILED,
+                updatedAt = sentAt,
+                sentAt = if (succeeded) sentAt else attempt.sentAt,
+                errorCode = if (succeeded) null else "ANDROID_SEND_RESULT_$androidResultCode",
+                errorMessage = if (succeeded) null else "Android SMS_SENT callback reported failure"
+            )
+            val nextJob = job.copy(
+                state = if (succeeded) GatewayJobState.AWAITING_REPLY else GatewayJobState.FAILED,
+                updatedAt = sentAt
+            )
+            putRecord(db, "gateway_jobs", "job_id", nextJob.jobId, null, encodeJob(nextJob))
+            putRecord(db, "gateway_attempts", "attempt_id", nextAttempt.attemptId, nextAttempt.jobId, encodeAttempt(nextAttempt))
+            db.setTransactionSuccessful()
+            return true
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     @Synchronized
     fun loadJob(jobId: String): GatewayJobRecord? =
         helper.readableDatabase.rawQuery(
