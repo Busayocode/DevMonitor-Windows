@@ -61,13 +61,17 @@ object Gateway3030ResponseParser {
         var dateTime: String? = null
 
         body.lineSequence().map(String::trim).filter(String::isNotEmpty).forEach { line ->
-            val separator = line.indexOfFirst { it == ':' || it == '=' }
-            if (separator <= 0) {
-                if (dateTime == null && (line.contains("/") || line.contains("-")) &&
-                    Regex("""\d{1,2}:\d{2}""").containsMatchIn(line)
-                ) dateTime = line
+            // A date/time line may itself contain a colon (HH:mm). Detect it
+            // before treating ':' as a metric label/value separator.
+            if (dateTime == null &&
+                (line.contains("/") || line.contains("-")) &&
+                Regex("""\d{1,2}:\d{2}""").containsMatchIn(line)
+            ) {
+                dateTime = line
                 return@forEach
             }
+            val separator = line.indexOfFirst { it == ':' || it == '=' }
+            if (separator <= 0) return@forEach
             val label = line.substring(0, separator).trim()
             val rawValue = line.substring(separator + 1).trim().replace(",", "")
             val key = labelPatterns.entries.firstOrNull { (_, patterns) ->
