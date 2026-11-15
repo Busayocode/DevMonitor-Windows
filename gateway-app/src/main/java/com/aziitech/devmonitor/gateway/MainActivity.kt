@@ -147,6 +147,7 @@ class MainActivity : ComponentActivity() {
                     availableGatewaySims = availableGatewaySims,
                     selectedSimSubscriptionId = selectedSimSubscriptionId,
                     onSelectGatewaySim = { subscriptionId -> selectGatewaySim(subscriptionId) },
+                    onAutoSelectGlo = { enableAutomaticGloSelection() },
                     onRequestSmsReadiness = { requestSmsReadiness() },
                     onOpenBatterySettings = { openBatteryOptimizationSettings() },
                     onStartWorker = { requestGatewayWorkerStart() },
@@ -227,6 +228,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun isGlobacomSubscription(info: android.telephony.SubscriptionInfo): Boolean {
+        val hasOperatorCode: Boolean
+        val isGloCode: Boolean
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val mcc = info.mccString.orEmpty()
+            val mnc = info.mncString.orEmpty()
+            hasOperatorCode = mcc.isNotBlank() && mnc.isNotBlank() && mcc != "000" && mnc != "000"
+            isGloCode = mcc == "621" && mnc == "50"
+        } else {
+            @Suppress("DEPRECATION")
+            val mcc = info.mcc
+            @Suppress("DEPRECATION")
+            val mnc = info.mnc
+            hasOperatorCode = mcc > 0 && mnc >= 0
+            isGloCode = mcc == 621 && mnc == 50
+        }
+        if (isGloCode) return true
+        if (hasOperatorCode) return false
+        return Regex("\\b(glo|globacom)\\b", RegexOption.IGNORE_CASE)
+            .containsMatchIn(info.carrierName?.toString().orEmpty())
+    }
+
     private fun refreshSmsReadiness() {
         val sendGranted = checkSelfPermission(android.Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
         val receiveGranted = checkSelfPermission(android.Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
@@ -254,19 +277,39 @@ class MainActivity : ComponentActivity() {
                     subscriptionId = info.subscriptionId,
                     slotIndex = info.simSlotIndex,
                     carrierName = info.carrierName?.toString()?.takeIf { it.isNotBlank() } ?: "Unknown carrier",
-                    ready = state == TelephonyManager.SIM_STATE_READY
+                    ready = state == TelephonyManager.SIM_STATE_READY,
+                    isGlobacom = isGlobacomSubscription(info)
                 )
             }
             availableGatewaySims = options
             readySimCount = options.count { it.ready }
-            val savedId = getSharedPreferences("devmonitor_gateway_sim", MODE_PRIVATE)
-                .getInt("selected_subscription_id", Int.MIN_VALUE)
+            val prefs = getSharedPreferences("devmonitor_gateway_sim", MODE_PRIVATE)
+            val savedId = prefs.getInt("selected_subscription_id", Int.MIN_VALUE)
                 .takeIf { it != Int.MIN_VALUE }
-            selectedSimSubscriptionId = savedId?.takeIf { id -> options.any { it.subscriptionId == id } }
-            if (selectedSimSubscriptionId == null) {
-                getSharedPreferences("devmonitor_gateway_sim", MODE_PRIVATE).edit()
-                    .remove("selected_subscription_id").apply()
+            val mode = prefs.getString("selection_mode", null)
+            val savedOption = savedId?.let { id -> options.firstOrNull { it.subscriptionId == id } }
+            val readyGlo = options.filter { it.ready && it.isGlobacom }.minByOrNull { it.slotIndex }
+
+            val chosen = when (mode) {
+                "MANUAL" -> savedOption?.takeIf { it.ready }
+                "AUTO_GLO" -> savedOption?.takeIf { it.ready && it.isGlobacom } ?: readyGlo
+                else -> {
+                    // Preserve an existing non-Glo selection as a legacy manual choice.
+                    if (savedOption != null && savedOption.ready && !savedOption.isGlobacom) {
+                        prefs.edit().putString("selection_mode", "MANUAL").apply()
+                        savedOption
+                    } else {
+                        prefs.edit().putString("selection_mode", "AUTO_GLO").apply()
+                        savedOption?.takeIf { it.ready && it.isGlobacom } ?: readyGlo
+                    }
+                }
             }
+            selectedSimSubscriptionId = chosen?.subscriptionId
+            prefs.edit().apply {
+                if (chosen != null) putInt("selected_subscription_id", chosen.subscriptionId)
+                else remove("selected_subscription_id")
+                if (mode == null && chosen?.isGlobacom == true) putString("selection_mode", "AUTO_GLO")
+            }.apply()
         }.onFailure {
             activeSimCount = 0
             readySimCount = 0
@@ -284,10 +327,25 @@ class MainActivity : ComponentActivity() {
         }
         selectedSimSubscriptionId = subscriptionId
         getSharedPreferences("devmonitor_gateway_sim", MODE_PRIVATE).edit()
-            .putInt("selected_subscription_id", subscriptionId).apply()
-        status = "SIM ${option.slotIndex + 1} (${option.carrierName}) selected for future Gateway SMS operations. No SMS was sent."
+            .putInt("selected_subscription_id", subscriptionId)
+            .putString("selection_mode", "MANUAL")
+            .apply()
+        status = "SIM ${option.slotIndex + 1} (${option.carrierName}) selected manually for future Gateway SMS operations. No SMS was sent."
     }
 
+    private fun enableAutomaticGloSelection() {
+        getSharedPreferences("devmonitor_gateway_sim", MODE_PRIVATE).edit()
+            .putString("selection_mode", "AUTO_GLO")
+            .remove("selected_subscription_id")
+            .apply()
+        selectedSimSubscriptionId = null
+        refreshSmsReadiness()
+        status = if (selectedSimSubscriptionId != null) {
+            "A ready Glo SIM was automatically selected. Manual SIM selection remains available."
+        } else {
+            "No ready Glo SIM was detected. Choose a SIM manually or insert/enable a Glo SIM."
+        }
+    }
 
     private fun requestGatewayWorkerStart() {
         if (gatewayId == null) {
