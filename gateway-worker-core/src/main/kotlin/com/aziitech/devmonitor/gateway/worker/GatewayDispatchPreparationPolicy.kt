@@ -73,7 +73,7 @@ object GatewayDispatchPreparationPolicy {
             return blocked(
                 when (request.channel.state) {
                     SmsChannelState.ACTIVE -> "Another 3030 transaction is active."
-                    SmsChannelState.DRAINING -> "The channel cooldown has not elapsed."
+                    SmsChannelState.DRAINING -> "The channel drain interval has not elapsed."
                     SmsChannelState.QUARANTINED -> "The channel is quarantined and requires operator reconciliation."
                     SmsChannelState.IDLE -> "The channel is not ready."
                 }
