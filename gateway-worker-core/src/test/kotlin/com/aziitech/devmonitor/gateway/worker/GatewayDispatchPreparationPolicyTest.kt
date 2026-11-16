@@ -96,6 +96,23 @@ class GatewayDispatchPreparationPolicyTest {
         )
     }
 
+
+    @Test fun cancellationCooldownBlocksUntilItsPersistedDeadline() {
+        val until = now.plusSeconds(240)
+        val cooldown = SmsChannelSnapshot(
+            state = SmsChannelState.CANCELLATION_COOLDOWN,
+            cancellationCooldownUntil = until
+        )
+        assertBlocked(
+            base.copy(channel = cooldown),
+            "The four-minute cancellation cooldown is still active."
+        )
+        assertEquals(
+            GatewayDispatchPreparation.ReadyForExplicitDispatchReview,
+            assess(base.copy(now = until, channel = cooldown))
+        )
+    }
+
     @Test fun quarantinedChannelRequiresOperatorReconciliation() {
         assertBlocked(
             base.copy(channel = SmsChannelSnapshot(SmsChannelState.QUARANTINED)),
