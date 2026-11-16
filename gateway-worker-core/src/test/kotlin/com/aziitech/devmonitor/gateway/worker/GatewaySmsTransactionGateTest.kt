@@ -36,6 +36,21 @@ class GatewaySmsTransactionGateTest {
         assertEquals("GLO-GD-342F", tx2.canonicalDeviceId)
     }
 
+    @Test fun zeroPostReplyQuietPeriodAllowsNextTransactionImmediately() {
+        val store = InMemorySmsChannelStateStore()
+        val g = GatewaySmsTransactionGate(store, Duration.ZERO)
+        begin(g)
+        val accepted = g.on3030Message("sms-immediate", t0.plusSeconds(30), "TODAY=4;MTD=20")
+        assertTrue(accepted is InboundSmsDecision.Accepted)
+        assertEquals(SmsChannelState.IDLE, g.state(t0.plusSeconds(30)))
+        val next = g.begin(
+            "tx-2", "job-2", "attempt-2", "GLO-GD-342F", "standard",
+            t0.plusSeconds(30), Duration.ofSeconds(120)
+        )
+        assertEquals("attempt-2", next.attemptId)
+        assertEquals(SmsChannelState.ACTIVE, g.state(t0.plusSeconds(30)))
+    }
+
     @Test fun timeoutQuarantinesUntilExplicitOperatorResolution() {
         val g = gate()
         begin(g)
