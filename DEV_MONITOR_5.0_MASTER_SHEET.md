@@ -503,3 +503,19 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - [ ] Physical multi-SIM/Globacom carrier validation remains outstanding.
 
 **Boundary:** a preflight pass means only that deterministic prerequisites look ready at the time of assessment. It is not a send authorization and does not prove live carrier delivery.
+
+
+## 34. Persistent four-minute cancellation cooldown — core implementation slice — 16 Nov 2026
+
+- [x] Added a distinct `CANCELLATION_COOLDOWN` channel state and persisted `cancellationCooldownUntil` deadline. This is separate from `DRAINING` and the 3030 response deadline.
+- [x] Added an explicit gate operation that starts the four-minute window only for the exact active attempt when the caller confirms a successful Android `SMS_SENT` callback. A cancel action alone, failed send callback, mismatched attempt ID, or uncertain submission does not start this cooldown.
+- [x] During cooldown, the channel rejects new transactions and records arriving 3030 message fingerprints as unassigned; it does not attach an old reply to a later job.
+- [x] The cooldown deadline is stored in the existing atomic SQLite snapshot and survives store/service recreation. Expiry is calculated from the persisted absolute deadline, not an in-memory timer.
+- [x] Dispatch preflight and recovery now recognize cooldown independently from the normal post-reply drain interval. The foreground-service status text can show `Cooldown · m:ss remaining` and does not claim or dispatch another job while active.
+- [x] Added worker-core tests for confirmed-vs-unconfirmed submission, exact-attempt matching, 239-second blocking, exact four-minute expiry, delayed reply handling, restart persistence, and preflight blocking/expiry. Added a Robolectric SQLite restart-persistence test.
+- [ ] Run the complete worker-core tests and Android APK build; inspect all workflow steps and the published APK.
+- [ ] Wire the gate operation to a real operator cancellation action only after the outbound dispatch lifecycle is explicitly enabled and tested. At present there is no live send/cancel UI path, and outbound SMS remains disabled.
+- [ ] Add an integration test proving a cancelled controller attempt is safely closed server-side before the next job can be claimed.
+- [ ] Validate on a physical Globacom SIM, including delayed/duplicate 3030 replies and process death during cooldown.
+
+**Boundary:** this is durable cooldown policy, storage, recovery and status groundwork. It is not a live cancellation feature yet because Gateway outbound sending and operator cancellation remain disconnected. The user-selected zero-second post-reply interval is unchanged; the four-minute cooldown applies only after a confirmed submitted query is cancelled. No physical carrier test is claimed.
