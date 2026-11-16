@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
     private var busy by mutableStateOf(false)
     private var signedIn by mutableStateOf(false)
     private var workerState by mutableStateOf("STOPPED")
+    private var workerMessage by mutableStateOf("No operator action has been requested.")
     private var batteryOptimizationIgnored by mutableStateOf(false)
     private var smsPermissionsGranted by mutableStateOf(false)
     private var phoneStatePermissionGranted by mutableStateOf(false)
@@ -105,6 +106,9 @@ class MainActivity : ComponentActivity() {
         controllerUrl = getSharedPreferences(GatewayForegroundService.PREFERENCES, MODE_PRIVATE)
             .getString(GatewayForegroundService.KEY_CONTROLLER_URL, "").orEmpty()
         workerState = GatewayForegroundService.readState(this)
+        workerMessage = getSharedPreferences(GatewayForegroundService.PREFERENCES, MODE_PRIVATE)
+            .getString(GatewayForegroundService.KEY_WORKER_MESSAGE, "No operator action has been requested.")
+            .orEmpty()
         lifecycleScope.launch {
             try {
                 val saved = withContext(Dispatchers.IO) { credentialStore.load() }
@@ -139,6 +143,7 @@ class MainActivity : ComponentActivity() {
                     gatewayId = gatewayId,
                     busy = busy,
                     workerState = workerState,
+                    workerMessage = workerMessage,
                     batteryOptimizationIgnored = batteryOptimizationIgnored,
                     smsPermissionsGranted = smsPermissionsGranted,
                     phoneStatePermissionGranted = phoneStatePermissionGranted,
@@ -152,6 +157,7 @@ class MainActivity : ComponentActivity() {
                     onOpenBatterySettings = { openBatteryOptimizationSettings() },
                     onStartWorker = { requestGatewayWorkerStart() },
                     onStopWorker = { stopGatewayWorker() },
+                    onCancelActiveJob = { requestActiveJobCancellation() },
                     onControllerUrlChange = {
                         controllerUrl = it
                         getSharedPreferences(GatewayForegroundService.PREFERENCES, MODE_PRIVATE).edit()
@@ -172,6 +178,9 @@ class MainActivity : ComponentActivity() {
             if (intent?.action == GatewayForegroundService.ACTION_STATE_CHANGED) {
                 workerState = intent.getStringExtra(GatewayForegroundService.EXTRA_STATE)
                     ?: GatewayForegroundService.readState(this@MainActivity)
+                workerMessage = intent.getStringExtra(GatewayForegroundService.EXTRA_STATUS)
+                    ?: getSharedPreferences(GatewayForegroundService.PREFERENCES, MODE_PRIVATE)
+                        .getString(GatewayForegroundService.KEY_WORKER_MESSAGE, workerMessage).orEmpty()
             }
         }
     }
@@ -195,6 +204,8 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         workerState = GatewayForegroundService.readState(this)
+        workerMessage = getSharedPreferences(GatewayForegroundService.PREFERENCES, MODE_PRIVATE)
+            .getString(GatewayForegroundService.KEY_WORKER_MESSAGE, workerMessage).orEmpty()
         refreshBatteryOptimizationStatus()
         refreshSmsReadiness()
     }
@@ -377,6 +388,20 @@ class MainActivity : ComponentActivity() {
         workerState = "STARTING"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
         status = "Gateway heartbeat service requested. SMS sending and receiving remain disabled."
+    }
+
+    private fun requestActiveJobCancellation() {
+        if (workerState != GatewayForegroundService.STATE_RUNNING &&
+            workerState != GatewayForegroundService.STATE_PAUSED
+        ) {
+            status = "Start the Gateway service before requesting cancellation."
+            return
+        }
+        val intent = Intent(this, GatewayForegroundService::class.java)
+            .setAction(GatewayForegroundService.ACTION_CANCEL_ACTIVE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+        workerMessage = "Cancellation requested. Gateway is verifying the exact controller and local attempt before taking action."
+        status = workerMessage
     }
 
     private fun stopGatewayWorker() {
