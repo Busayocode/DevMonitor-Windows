@@ -5,7 +5,7 @@ This is the reference FastAPI service for the DevMonitor 5.0 controller. It is s
 ## Local run
 
 1. Create a dedicated PostgreSQL database.
-2. Apply the migrations in `../postgres/` in numeric order, V001 through V013.
+2. Apply the migrations in `../postgres/` in numeric order, V001 through V014.
 3. Copy `.env.example` to a private environment file and set:
    - `DATABASE_URL` to the controller database.
    - `FIREBASE_PROJECT_ID` to the exact Project ID shown in Firebase Console > Project settings > General.
@@ -41,3 +41,10 @@ Firebase Authentication is the selected identity provider. The existing `Fieldpu
 ## Not production-ready yet
 
 The code still needs real identity-provider integration tests, explicit PostgreSQL runtime-role grants, rate limiting, structured security/audit monitoring, deployment secrets management, cross-process contention/load tests, restart recovery tests, broader queue-rebalance/failover tests and a live gateway-phone test. Queue depth is sampled every minute while the controller is running and exposed as a 30-day trend. Observed Gateway uptime is calculated from recorded health transitions (periods without transition history are excluded); utilization is currently a point-in-time busy/ready ratio. No paid service or cloud host has been selected.
+
+
+## Gateway worker cancellation endpoint
+
+`POST /v1/gateway/jobs/{job_id}/cancel` is authenticated with the Gateway bearer credential and requires the exact attempt ID and opaque lease token. The database enforces the transition and is idempotent by attempt ID. Pre-send cancellation closes only a LEASED attempt with no send evidence. Post-send cancellation closes only an AWAITING_REPLY attempt with persisted SMS_SENT evidence and starts a durable four-minute Gateway claim cooldown. Claims are rejected by the database until that deadline expires. SENDING/AMBIGUOUS states are not released and quarantine the Gateway.
+
+The endpoint is implemented in source but is not yet called by the Android worker. SMS dispatch remains disabled in the current Android build. No live server, database or phone transaction is implied by CI passing.
