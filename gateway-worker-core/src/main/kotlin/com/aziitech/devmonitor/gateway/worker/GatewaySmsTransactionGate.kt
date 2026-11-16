@@ -3,7 +3,7 @@ package com.aziitech.devmonitor.gateway.worker
 import java.time.Duration
 import java.time.Instant
 
-enum class SmsChannelState { IDLE, ACTIVE, DRAINING, QUARANTINED }
+enum class SmsChannelState { IDLE, ACTIVE, DRAINING, CANCELLATION_COOLDOWN, QUARANTINED }
 
 data class SmsTransaction(
     val transactionId: String,
@@ -19,6 +19,7 @@ data class SmsChannelSnapshot(
     val state: SmsChannelState = SmsChannelState.IDLE,
     val transaction: SmsTransaction? = null,
     val drainUntil: Instant? = null,
+    val cancellationCooldownUntil: Instant? = null,
     val seenMessageFingerprints: Set<String> = emptySet(),
     val lastResolutionNote: String? = null
 )
@@ -69,6 +70,8 @@ class GatewaySmsTransactionGate(
         val ready = when (current.state) {
             SmsChannelState.IDLE -> true
             SmsChannelState.DRAINING -> current.drainUntil?.let { !startedAt.isBefore(it) } == true
+            SmsChannelState.CANCELLATION_COOLDOWN ->
+                current.cancellationCooldownUntil?.let { !startedAt.isBefore(it) } == true
             else -> false
         }
         check(ready) { "SMS channel is ${current.state}; a new 3030 request is not safe" }
@@ -81,9 +84,39 @@ class GatewaySmsTransactionGate(
             state = SmsChannelState.ACTIVE,
             transaction = transaction,
             drainUntil = null,
+            cancellationCooldownUntil = null,
             lastResolutionNote = null
         ))
         return transaction
+    }
+
+
+    /**
+     * Starts the independent four-minute cancellation cooldown only when the
+     * exact active attempt has a confirmed successful Android SMS_SENT result.
+     * Callers must not infer submission from a button press or an uncertain callback.
+     */
+    @Synchronized
+    fun recordCancellationAfterSubmission(
+        attemptId: String,
+        now: Instant,
+        cooldown: Duration = Duration.ofMinutes(4),
+        androidSubmissionSucceeded: Boolean
+    ): Boolean {
+        require(attemptId.isNotBlank())
+        require(!cooldown.isNegative && !cooldown.isZero)
+        if (!androidSubmissionSucceeded) return false
+        val current = store.load()
+        val tx = current.transaction ?: return false
+        if (current.state != SmsChannelState.ACTIVE || tx.attemptId != attemptId) return false
+        store.save(current.copy(
+            state = SmsChannelState.CANCELLATION_COOLDOWN,
+            transaction = null,
+            drainUntil = null,
+            cancellationCooldownUntil = now.plus(cooldown),
+            lastResolutionNote = "Cancelled after confirmed SMS submission; four-minute cooldown started."
+        ))
+        return true
     }
 
     /** Call only for a newly observed SMS from the verified 3030 sender. */
@@ -129,6 +162,10 @@ class GatewaySmsTransactionGate(
                     seenMessageFingerprints = seen
                 ))
                 InboundSmsDecision.Unassigned("Message arrived during the post-reply drain window")
+            }
+            SmsChannelState.CANCELLATION_COOLDOWN -> {
+                store.save(current.copy(seenMessageFingerprints = seen))
+                InboundSmsDecision.Unassigned("Reply arrived during cancellation cooldown; previous attempt is not assigned")
             }
             SmsChannelState.QUARANTINED ->
                 InboundSmsDecision.Unassigned("Channel is quarantined; operator resolution is required")
@@ -176,6 +213,7 @@ class GatewaySmsTransactionGate(
             state = SmsChannelState.IDLE,
             transaction = null,
             drainUntil = null,
+            cancellationCooldownUntil = null,
             lastResolutionNote = "$operatorId: $resolutionNote"
         ))
     }
@@ -183,8 +221,12 @@ class GatewaySmsTransactionGate(
     @Synchronized
     fun state(now: Instant): SmsChannelState {
         val current = store.load()
-        return if (current.state == SmsChannelState.DRAINING &&
-            current.drainUntil?.let { !now.isBefore(it) } == true
-        ) SmsChannelState.IDLE else current.state
+        return when (current.state) {
+            SmsChannelState.DRAINING ->
+                if (current.drainUntil?.let { !now.isBefore(it) } == true) SmsChannelState.IDLE else current.state
+            SmsChannelState.CANCELLATION_COOLDOWN ->
+                if (current.cancellationCooldownUntil?.let { !now.isBefore(it) } == true) SmsChannelState.IDLE else current.state
+            else -> current.state
+        }
     }
 }
