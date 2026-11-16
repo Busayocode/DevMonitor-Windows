@@ -134,3 +134,6 @@ jobs:
 
       - name: Run concurrent PostgreSQL gateway claim tests
         run: bash controller/postgres/tests/controller_concurrency_test.sh
+
+      - name: Run exact cancellation and four-minute cooldown tests
+        run: psql -v ON_ERROR_STOP=1 -f controller/postgres/tests/controller_cancellation_cooldown_test.sql
