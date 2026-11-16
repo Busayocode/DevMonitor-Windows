@@ -92,7 +92,7 @@ class GatewayDispatchPreparationPolicyTest {
         )
         assertEquals(
             GatewayDispatchPreparation.ReadyForExplicitDispatchReview,
-            assess(base.copy(now = until, channel = draining))
+            assess(base.copy(now = until, leaseExpiresAt = until.plusSeconds(60), channel = draining))
         )
     }
 
