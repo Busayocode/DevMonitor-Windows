@@ -36,9 +36,9 @@ import kotlinx.coroutines.launch
 /**
  * User-started Gateway heartbeat service foundation.
  *
- * This stage deliberately does not claim jobs or send/receive SMS. The service
- * keeps the registered phone's health heartbeat visible while the operator has
- * explicitly started it. It is not restarted automatically after reboot.
+ * The user-started service reports readiness, reconciles durable attempts,
+ * processes only exactly correlated 3030 replies, and may claim one controller
+ * lease when the phone is ready. Outbound SMS dispatch remains disabled.
  */
 class GatewayForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -117,13 +117,14 @@ class GatewayForegroundService : Service() {
                         telephonyReady = readiness.telephonyReady,
                         networkReady = networkReady
                     )
+                    val callbackNote = reconcileDurableSendCallback(client)
                     val replyNote = processDurableReplyInbox(client)
                     val claimNote = claimControllerWorkIfIdle(client, readiness, networkReady)
                     saveState(STATE_RUNNING)
                     updateNotification(
                         "Controller heartbeat acknowledged (${heartbeat.healthState}). " +
                             readiness.summary + ". " +
-                            (claimNote ?: replyNote ?: "No active work. SMS sending remains disabled.")
+                            (claimNote ?: replyNote ?: callbackNote ?: "No active work. SMS sending remains disabled.")
                     )
                 } catch (cancelled: CancellationException) {
                     throw cancelled
