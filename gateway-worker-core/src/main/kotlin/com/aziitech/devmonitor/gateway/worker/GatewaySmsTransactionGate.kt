@@ -47,8 +47,8 @@ class GatewaySmsTransactionGate(
     private val postReplyQuietPeriod: Duration
 ) {
     init {
-        require(!postReplyQuietPeriod.isNegative && !postReplyQuietPeriod.isZero) {
-            "A measured, positive post-reply quiet period must be configured"
+        require(!postReplyQuietPeriod.isNegative) {
+            "Post-reply quiet period cannot be negative"
         }
     }
 
