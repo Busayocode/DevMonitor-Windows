@@ -13,9 +13,10 @@ fi
 psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
   --set=ON_ERROR_STOP=1 \
   --set=api_user="$CONTROLLER_API_DB_USER" \
-  --set=api_password="$CONTROLLER_API_DB_PASSWORD" <<'SQL'
+  --set=api_password="$CONTROLLER_API_DB_PASSWORD" \
+  --set=database_name="$POSTGRES_DB" <<'SQL'
 CREATE ROLE :"api_user" LOGIN PASSWORD :'api_password';
-GRANT CONNECT ON DATABASE :"POSTGRES_DB" TO :"api_user";
+GRANT CONNECT ON DATABASE :"database_name" TO :"api_user";
 GRANT USAGE ON SCHEMA public TO :"api_user";
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :"api_user";
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"api_user";
