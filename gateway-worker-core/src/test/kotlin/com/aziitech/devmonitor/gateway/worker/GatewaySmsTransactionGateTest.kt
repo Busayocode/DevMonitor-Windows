@@ -51,6 +51,50 @@ class GatewaySmsTransactionGateTest {
         assertEquals(SmsChannelState.ACTIVE, g.state(t0.plusSeconds(30)))
     }
 
+
+    @Test fun cancellationCooldownStartsOnlyAfterConfirmedSubmissionAndBlocksFourMinutes() {
+        val store = InMemorySmsChannelStateStore()
+        val g = GatewaySmsTransactionGate(store, Duration.ZERO)
+        begin(g)
+
+        assertFalse(g.recordCancellationAfterSubmission(
+            "attempt-tx-1", t0, androidSubmissionSucceeded = false
+        ))
+        assertFalse(g.recordCancellationAfterSubmission(
+            "different-attempt", t0, androidSubmissionSucceeded = true
+        ))
+        assertEquals(SmsChannelState.ACTIVE, g.state(t0))
+
+        assertTrue(g.recordCancellationAfterSubmission(
+            "attempt-tx-1", t0, androidSubmissionSucceeded = true
+        ))
+        assertEquals(SmsChannelState.CANCELLATION_COOLDOWN, g.state(t0.plusSeconds(239)))
+        assertThrows(IllegalStateException::class.java) {
+            g.begin("tx-2", "job-2", "attempt-2", "GLO-GD-342F", "standard",
+                t0.plusSeconds(239), Duration.ofSeconds(120))
+        }
+
+        val delayed = g.on3030Message("delayed-old-reply", t0.plusSeconds(240), "TODAY=8;MTD=31")
+        assertTrue(delayed is InboundSmsDecision.Unassigned)
+        assertEquals(SmsChannelState.IDLE, g.state(t0.plusSeconds(240)))
+        val next = g.begin("tx-2", "job-2", "attempt-2", "GLO-GD-342F", "standard",
+            t0.plusSeconds(240), Duration.ofSeconds(120))
+        assertEquals("attempt-2", next.attemptId)
+    }
+
+    @Test fun cancellationCooldownSurvivesGateRecreationAndKeepsPostReplyAtZero() {
+        val store = InMemorySmsChannelStateStore()
+        val firstProcess = GatewaySmsTransactionGate(store, Duration.ZERO)
+        begin(firstProcess)
+        assertTrue(firstProcess.recordCancellationAfterSubmission(
+            "attempt-tx-1", t0, androidSubmissionSucceeded = true
+        ))
+
+        val restartedProcess = GatewaySmsTransactionGate(store, Duration.ZERO)
+        assertEquals(SmsChannelState.CANCELLATION_COOLDOWN, restartedProcess.state(t0.plusSeconds(180)))
+        assertEquals(SmsChannelState.IDLE, restartedProcess.state(t0.plusSeconds(240)))
+    }
+
     @Test fun timeoutQuarantinesUntilExplicitOperatorResolution() {
         val g = gate()
         begin(g)
