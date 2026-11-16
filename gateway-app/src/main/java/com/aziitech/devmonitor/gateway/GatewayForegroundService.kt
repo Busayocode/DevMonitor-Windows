@@ -195,10 +195,6 @@ class GatewayForegroundService : Service() {
         readiness: GatewayPhoneReadinessState,
         networkReady: Boolean
     ): String? {
-        if (!readiness.smsPermissionReady || !readiness.telephonyReady || !networkReady) {
-            return "Job claim paused until SMS permissions, selected SIM readiness and validated network are ready."
-        }
-
         val stored = runCatching { credentials.load() }.getOrNull()
             ?: return "Gateway identity unavailable; no job was claimed."
         val ledger = SqliteSmsChannelStateStore(applicationContext)
@@ -223,6 +219,10 @@ class GatewayForegroundService : Service() {
                         "Gateway channel quarantined: " + recovery.reason
                     GatewayRecoveryStatus.NO_ACTIVE_WORK -> null
                 }
+            }
+
+            if (!readiness.smsPermissionReady || !readiness.telephonyReady || !networkReady) {
+                return "Job claim paused until SMS permissions, selected SIM readiness and validated network are ready."
             }
 
             val claimed = controller.claimAndPersist(
