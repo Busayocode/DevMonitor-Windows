@@ -35,6 +35,14 @@ BEGIN
     INSERT INTO dm_check_batches(id,tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
     VALUES (b,t,u,'v014-'||b,'GATEWAY',4,digest(convert_to('v014-'||b::TEXT,'UTF8'),'sha256'));
 
+    -- Device-level entitlements are enforced by the database trigger.
+    INSERT INTO dm_tenant_device_access(tenant_id,canonical_device_id,access_state)
+    VALUES
+        (t,'V014-PRE','ACTIVE'),
+        (t,'V014-SENT','ACTIVE'),
+        (t,'V014-WAIT','ACTIVE'),
+        (t,'V014-UNCERTAIN','ACTIVE');
+
     -- A lease cancelled before any send evidence is safe to close immediately.
     INSERT INTO dm_check_jobs(id,batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,state)
     VALUES (j_pre,b,t,u,'V014-PRE','standard','LEASED');
