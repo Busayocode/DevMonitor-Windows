@@ -67,6 +67,8 @@ object GatewayDispatchPreparationPolicy {
             SmsChannelState.IDLE -> true
             SmsChannelState.DRAINING ->
                 request.channel.drainUntil?.let { !request.now.isBefore(it) } == true
+            SmsChannelState.CANCELLATION_COOLDOWN ->
+                request.channel.cancellationCooldownUntil?.let { !request.now.isBefore(it) } == true
             SmsChannelState.ACTIVE, SmsChannelState.QUARANTINED -> false
         }
         if (!channelReady) {
@@ -74,6 +76,7 @@ object GatewayDispatchPreparationPolicy {
                 when (request.channel.state) {
                     SmsChannelState.ACTIVE -> "Another 3030 transaction is active."
                     SmsChannelState.DRAINING -> "The channel drain interval has not elapsed."
+                    SmsChannelState.CANCELLATION_COOLDOWN -> "The four-minute cancellation cooldown is still active."
                     SmsChannelState.QUARANTINED -> "The channel is quarantined and requires operator reconciliation."
                     SmsChannelState.IDLE -> "The channel is not ready."
                 }
