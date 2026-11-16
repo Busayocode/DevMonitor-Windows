@@ -103,6 +103,15 @@ jobs:
       - name: Build hardened controller container image
         run: docker build --pull -t devmonitor-gateway-controller:ci controller/service
 
+      - name: Validate portable deployment configuration and database-role bootstrap
+        run: |
+          bash -n controller/deploy/init/999-create-api-role.sh
+          printf 'CONTROLLER_MIGRATION_DB_PASSWORD=%s\n' "$(openssl rand -hex 32)" > controller/deploy/.env.ci
+          printf 'CONTROLLER_API_DB_PASSWORD=%s\n' "$(openssl rand -hex 32)" >> controller/deploy/.env.ci
+          printf 'FIREBASE_PROJECT_ID=ci-placeholder\n' >> controller/deploy/.env.ci
+          docker compose --env-file controller/deploy/.env.ci -f controller/deploy/compose.yaml config --quiet
+          rm controller/deploy/.env.ci
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -131,6 +140,16 @@ jobs:
             echo "Applying $migration"
             psql -v ON_ERROR_STOP=1 -f "$migration"
           done
+
+      - name: Verify separate non-superuser API database role
+        run: |
+          export POSTGRES_USER="$PGUSER"
+          export POSTGRES_DB="$PGDATABASE"
+          export CONTROLLER_API_DB_USER=gateway_api_ci
+          export CONTROLLER_API_DB_PASSWORD="$(openssl rand -hex 32)"
+          bash controller/deploy/init/999-create-api-role.sh
+          PGPASSWORD="$CONTROLLER_API_DB_PASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$CONTROLLER_API_DB_USER" -d "$PGDATABASE" -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM dm_gateways"
+          PGPASSWORD="$CONTROLLER_API_DB_PASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$CONTROLLER_API_DB_USER" -d "$PGDATABASE" -v ON_ERROR_STOP=1 -Atc "SELECT NOT rolsuper FROM pg_roles WHERE rolname = current_user" | grep -qx t
 
       - name: Run controller integration smoke tests
         run: psql -v ON_ERROR_STOP=1 -f controller/postgres/tests/controller_smoke_test.sql
