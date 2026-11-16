@@ -472,3 +472,18 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - [ ] Validate real 3030 delivery and duplicate/late-message behavior on a physical Globacom SIM.
 
 **Operational boundary:** the user-started service now performs controlled reply intake and guarded result submission for an already-active attempt. Outbound SMS and automatic queue execution remain disabled. CI and physical-device verification are still required; no live carrier transaction is claimed.
+
+
+## 32. Readiness-gated controller job claim and durable lease — 16 Nov 2026
+
+- [x] Foreground worker performs a fresh controller/local recovery check before attempting a claim.
+- [x] Claims only when the controller reports no active attempt, the local durable ledger/channel are idle, the selected SIM is active and ready, SMS permissions are granted, and Android reports a validated network.
+- [x] Uses the registered Gateway identity and controller-authorised claim endpoint; the opaque lease token is encrypted in Android Keystore-backed storage and the job/attempt are persisted in SQLite.
+- [x] The heartbeat loop can retain only one unresolved claimed attempt; later iterations recover that lease rather than claim another job.
+- [x] Claim/persist failure does not fall through to SMS transmission. An orphaned server lease is detected by recovery and quarantined if local persistence is missing.
+- [x] No SENDING transition is made, and the dispatch coordinator/SmsManager sender are not invoked. Actual outbound SMS remains disabled.
+- [ ] Run the full Android unit-test/build workflow and inspect the resulting APK/source ZIP.
+- [ ] Add deterministic tests for claim eligibility, no-claim states, readiness gating and one-claim-only lifecycle behavior.
+- [ ] Physical multi-SIM/Globacom validation remains outstanding.
+
+**Operational boundary:** Gateway may reserve and durably record one controller-authorised job when the phone is ready. It does not transmit SMS, retry, or advance a queue. The four-minute cancellation cooldown remains separate; accepted replies retain the user-selected zero-second post-reply interval.
