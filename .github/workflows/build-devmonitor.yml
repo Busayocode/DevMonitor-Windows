@@ -518,6 +518,7 @@ jobs:
           PY
 
       - name: Package patched Android v352 source with master worksheet
+        if: github.ref_name != 'sms-checker-cancel-cooldown-v353'
         shell: bash
         run: |
           set -euo pipefail
@@ -530,6 +531,7 @@ jobs:
           test -s "$SOURCE_ARCHIVE"
           echo "Created patched v352 Android source package with the master worksheet."
       - name: Upload patched Android v352 source package
+        if: github.ref_name != 'sms-checker-cancel-cooldown-v353'
         uses: actions/upload-artifact@v4
         with:
           name: DevMonitor-An-v352-Glo-SIM-Auto-Source
@@ -579,7 +581,9 @@ jobs:
           stop_start = source.find("fun stopRun() {")
           stop_end = source.find("OperationServiceCallbacks.onStopRequested", stop_start)
           stop_body = source[stop_start:stop_end] if stop_start >= 0 and stop_end > stop_start else ""
-          if not re.search(r'if \\(running\\)\\s*\\{.*?cooldownUntil = cancelledAt', stop_body, re.S):
+          guard_at = stop_body.find("if (running) {")
+          cooldown_at = stop_body.find("cooldownUntil = cancelledAt")
+          if guard_at < 0 or cooldown_at < guard_at:
               raise SystemExit("The four-minute cooldown must begin only when Stop/Cancel is pressed during an active run.")
 
           if 'OperationServiceCallbacks.onStopRequested = { stopRun() }' not in source or 'onClick = { stopRun() }' not in source:
