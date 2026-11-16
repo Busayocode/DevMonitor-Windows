@@ -519,3 +519,17 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - [ ] Validate on a physical Globacom SIM, including delayed/duplicate 3030 replies and process death during cooldown.
 
 **Boundary:** this is durable cooldown policy, storage, recovery and status groundwork. It is not a live cancellation feature yet because Gateway outbound sending and operator cancellation remain disconnected. The user-selected zero-second post-reply interval is unchanged; the four-minute cooldown applies only after a confirmed submitted query is cancelled. No physical carrier test is claimed.
+
+
+## 35. Cancellation-to-controller safety boundary — 16 Nov 2026
+
+- [x] Audited the Android controller client and architecture contract before wiring cancellation.
+- [x] Confirmed the existing controller client supports `LEASED`, `SENDING`, `AWAITING_REPLY`, result submission and an `AMBIGUOUS` transition, but contains no documented cancel/close endpoint.
+- [x] Added pure `GatewayCancellationPolicy` to distinguish: safe pre-send cancellation eligibility; confirmed-sent cancellation requiring server closure plus the four-minute cooldown; and uncertain/mismatched states that must block and quarantine.
+- [x] Added five tests covering pre-send lease, confirmed sent attempt, uncertain SENDING, mismatched server/local state and already ambiguous work.
+- [x] Documented the required atomic/idempotent controller cancellation contract, including terminal closure, audit, server-side no-new-assignment barrier, late-reply rejection, retry after lost response and persistence-failure recovery.
+- [ ] Implement the contract in the actual Gateway Controller backend. The backend implementation is not present in this Android repository, so no endpoint has been guessed or called.
+- [ ] Add controller integration/contract tests for cancellation racing with SENDING, duplicate cancellation, lost HTTP response, post-send closure and cooldown claim barrier.
+- [ ] Only then wire the operator Cancel control and allow a new assignment after both server closure and local cooldown expiry.
+
+**Boundary:** no live cancellation control was added. An `AMBIGUOUS` acknowledgement is not cancellation and must not free a gateway. SMS sending remains disabled. This slice adds tested decision policy and documents the backend dependency; it does not claim server-side cancellation is implemented.
