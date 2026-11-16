@@ -445,3 +445,15 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - [ ] Physical-device validation across single-SIM and multi-SIM phones, including one and multiple Globacom SIMs, remains pending.
 
 **Safety boundary:** this is readiness reporting only. It does not auto-select a SIM, claim controller work, transmit SMS, or wire the 3030 result-submission API into the foreground worker. Restart recovery remains reconciliation-only and must be connected to a safely configured transaction gate before any queue execution is enabled. The post-reply quiet period must not be guessed from the separate four-minute cancellation cooldown.
+
+
+## 30. Immediate next-query policy after accepted 3030 reply — 16 Nov 2026
+
+- [x] User explicitly selected **zero seconds** for the post-reply quiet period. This is a distinct policy from the four-minute cancellation cooldown.
+- [x] Updated the worker-core transaction gate to accept a zero-duration post-reply interval while still rejecting negative durations.
+- [x] Added a deterministic test proving that, after a valid reply is accepted and staged by the gate, the next transaction may begin at the same timestamp.
+- [ ] Wire the zero-duration configuration into the Android foreground worker together with durable transaction restoration, restart recovery, inbox processing and guarded controller result submission.
+- [ ] Run the combined Android/worker-core CI suite before publishing an updated APK.
+- [ ] Validate on a physical Globacom SIM with duplicate, delayed and out-of-order 3030 messages.
+
+**Important protocol risk:** 3030 replies do not echo the requested device/partner identifier. With a zero-second drain, a delayed duplicate that arrives only after the next transaction starts may be indistinguishable from that next transaction's reply. Exact fingerprint duplicates, response deadlines, durable attempt matching and quarantine remain mandatory, but they cannot eliminate this protocol-level ambiguity. Live dispatch remains disabled until the integrated flow and physical-device tests pass.
