@@ -47,4 +47,11 @@ The code still needs real identity-provider integration tests, explicit PostgreS
 
 `POST /v1/gateway/jobs/{job_id}/cancel` is authenticated with the Gateway bearer credential and requires the exact attempt ID and opaque lease token. The database enforces the transition and is idempotent by attempt ID. Pre-send cancellation closes only a LEASED attempt with no send evidence. Post-send cancellation closes only an AWAITING_REPLY attempt with persisted SMS_SENT evidence and starts a durable four-minute Gateway claim cooldown. Claims are rejected by the database until that deadline expires. SENDING/AMBIGUOUS states are not released and quarantine the Gateway.
 
-The endpoint is implemented in source but is not yet called by the Android worker. SMS dispatch remains disabled in the current Android build. No live server, database or phone transaction is implied by CI passing.
+The endpoint is implemented in the backend and is wired into the separate Gateway Android development branch's operator Cancel action. The Android build verifies compilation and packaging only; it does not imply a deployed controller or a live phone transaction. Outbound SMS dispatch remains disabled.
+
+
+## Portable deployment starter
+
+A local/private Docker Compose starter is available under `controller/deploy/`. It initializes a dedicated PostgreSQL 16 volume with V001–V014 on first creation, creates a separate non-superuser API role, and binds the API to loopback. See `controller/deploy/README.md` before use.
+
+This is not a production deployment. A real host, HTTPS reverse proxy, secret management, backup/restore, monitoring, rate limiting and operational review are still required before connecting phones.
