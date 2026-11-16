@@ -84,6 +84,8 @@ class Gateway3030InboxProcessorTest {
         inbox.record3030("3030", receivedAt, 1, validReply)
         val row = inbox.loadUnassigned().single()
         assertTrue(inbox.stageAccepted(row.fingerprint, "job-1", "attempt-1", "canonical-payload"))
+        assertTrue(inbox.markSubmissionStarted(row.fingerprint))
+        assertTrue(inbox.loadPendingController().isEmpty())
         assertTrue(inbox.markSubmissionUncertain(row.fingerprint, "network outcome unknown"))
         assertTrue(inbox.loadPendingController().isEmpty())
         assertEquals("SUBMISSION_UNCERTAIN", inbox.loadStateForTest(row.fingerprint))
