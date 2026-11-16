@@ -12,6 +12,10 @@ DECLARE
     j_sent UUID := gen_random_uuid();
     a_sent UUID := gen_random_uuid();
     j_waiting UUID := gen_random_uuid();
+    j_uncertain UUID := gen_random_uuid();
+    a_uncertain UUID := gen_random_uuid();
+    token_uncertain TEXT := encode(gen_random_bytes(32),'hex');
+    result_bad RECORD;
     token_pre TEXT := encode(gen_random_bytes(32),'hex');
     token_sent TEXT := encode(gen_random_bytes(32),'hex');
     result_row RECORD;
@@ -39,6 +43,13 @@ BEGIN
     ) VALUES (
         a_pre,j_pre,g,1,digest(decode(token_pre,'hex'),'sha256'),'LEASED',now()+INTERVAL '2 minutes'
     );
+    -- An attempt UUID without its exact opaque lease token cannot cancel it.
+    SELECT * INTO result_bad
+      FROM dm_cancel_gateway_attempt(g,j_pre,a_pre,encode(gen_random_bytes(32),'hex'),'wrong token');
+    IF result_bad.accepted OR result_bad.outcome <> 'ATTEMPT_MISMATCH' THEN
+        RAISE EXCEPTION 'V014 accepted cancellation with an incorrect lease token';
+    END IF;
+
     SELECT * INTO result_row
       FROM dm_cancel_gateway_attempt(g,j_pre,a_pre,token_pre,'pre-send test');
     IF NOT result_row.accepted OR result_row.outcome <> 'CANCELLED_BEFORE_SEND'
@@ -82,6 +93,28 @@ BEGIN
     SELECT * INTO claimed FROM dm_claim_next_job(g,120);
     IF claimed.job_id IS NOT NULL THEN
         RAISE EXCEPTION 'V014 claim escaped the four-minute cancellation cooldown';
+    END IF;
+
+    -- If SMS submission may have occurred but SMS_SENT is not confirmed,
+    -- cancellation must not release the attempt and must quarantine the phone.
+    INSERT INTO dm_check_jobs(id,batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,state)
+    VALUES (j_uncertain,b,t,u,'V014-UNCERTAIN','standard','SENDING');
+    INSERT INTO dm_job_attempts(
+        id,job_id,gateway_id,attempt_number,lease_token_hash,state,lease_expires_at,send_started_at
+    ) VALUES (
+        a_uncertain,j_uncertain,g,1,digest(decode(token_uncertain,'hex'),'sha256'),'SENDING',
+        now()+INTERVAL '2 minutes',now()-INTERVAL '3 seconds'
+    );
+    SELECT * INTO result_row
+      FROM dm_cancel_gateway_attempt(g,j_uncertain,a_uncertain,token_uncertain,'uncertain send test');
+    IF NOT result_row.accepted OR result_row.outcome <> 'BLOCKED_QUARANTINED' THEN
+        RAISE EXCEPTION 'V014 released an uncertain SMS send: %',row_to_json(result_row);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM dm_gateways
+         WHERE id=g AND health_state='QUARANTINED' AND accept_pool_jobs=FALSE
+    ) THEN
+        RAISE EXCEPTION 'V014 did not quarantine the Gateway for an uncertain send';
     END IF;
 END;
 $$;
