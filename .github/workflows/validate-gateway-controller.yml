@@ -12,6 +12,7 @@ on:
   pull_request:
     branches:
       - devmonitor-5.0-foundation
+      - gateway-controller-cancel-cooldown-v1
     paths:
       - "controller/**"
       - "docs/DevMonitor-5.0-Phase-3-Controller-Foundation.md"
