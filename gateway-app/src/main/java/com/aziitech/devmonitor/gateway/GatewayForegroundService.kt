@@ -15,6 +15,8 @@ import android.os.IBinder
 import com.aziitech.devmonitor.gateway.worker.AndroidGatewayCredentialStore
 import com.aziitech.devmonitor.gateway.worker.AndroidGatewayLeaseTokenStore
 import com.aziitech.devmonitor.gateway.worker.GatewayAttemptState
+import com.aziitech.devmonitor.gateway.worker.GatewayCancellationPolicy
+import com.aziitech.devmonitor.gateway.worker.GatewayCancellationSnapshot
 import com.aziitech.devmonitor.gateway.worker.Gateway3030InboxProcessor
 import com.aziitech.devmonitor.gateway.worker.GatewayDispatchRecoveryAdapter
 import com.aziitech.devmonitor.gateway.worker.GatewayRecoveryStatus
@@ -30,6 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -66,6 +69,10 @@ class GatewayForegroundService : Service() {
                 updateNotification("Paused by operator. No SMS activity is enabled.")
             }
             ACTION_STOP -> stopWorker()
+            ACTION_CANCEL_ACTIVE -> {
+                enterForeground()
+                serviceScope.launch { cancelActiveAttempt() }
+            }
             else -> {
                 enterForeground()
                 updateNotification("Unknown command. Heartbeat is not running.")
@@ -290,6 +297,117 @@ class GatewayForegroundService : Service() {
     }
 
 
+    /**
+     * Operator cancellation is fail-closed. The controller's exact active attempt,
+     * the one unresolved SQLite pair and the encrypted lease token must all agree.
+     * Any transport uncertainty quarantines locally; it is never reported as success.
+     */
+    private suspend fun cancelActiveAttempt() {
+        val wasRunning = heartbeatJob?.isActive == true
+        heartbeatJob?.cancelAndJoin()
+        val prefs = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+        val baseUrl = prefs.getString(KEY_CONTROLLER_URL, "").orEmpty().trim()
+        val credential = runCatching { credentials.load() }.getOrNull()
+        if (!baseUrl.startsWith("https://", ignoreCase = true) ||
+            credential == null || credential.controllerBaseUrl != baseUrl
+        ) {
+            publishWorkerMessage("Cancellation unavailable: this Gateway has no valid pinned HTTPS controller identity.")
+            if (wasRunning) startHeartbeatLoop()
+            return
+        }
+
+        val ledger = SqliteSmsChannelStateStore(applicationContext)
+        val leaseTokens = AndroidGatewayLeaseTokenStore(applicationContext)
+        val gate = GatewaySmsTransactionGate(ledger, Duration.ZERO)
+        try {
+            publishWorkerMessage("Checking the exact active controller attempt before cancellation…")
+            val controller = GatewayWorkerControllerClient(
+                baseUrl = baseUrl,
+                gatewayTokenProvider = {
+                    credentials.load()?.gatewayToken
+                        ?: throw IllegalStateException("Gateway credential is unavailable")
+                }
+            )
+            val server = controller.fetchActiveAttempt(leaseTokens)
+            val unresolved = ledger.loadUnresolvedDispatches()
+            if (server == null) {
+                publishWorkerMessage("There is no active controller attempt to cancel.")
+                return
+            }
+            if (unresolved.size != 1) {
+                gate.quarantine("Operator cancellation found zero or multiple local unresolved attempts.")
+                publishWorkerMessage("Cancellation blocked: local attempt records do not identify exactly one active job. Gateway is quarantined for reconciliation.")
+                return
+            }
+            val local = unresolved.single()
+            if (server.jobId != local.job.jobId ||
+                server.attemptId != local.attempt.attemptId ||
+                local.job.gatewayId != credential.gatewayId ||
+                local.attempt.gatewayId != credential.gatewayId ||
+                !server.localLeaseTokenAvailable
+            ) {
+                gate.quarantine("Operator cancellation could not prove exact controller, local job, attempt, Gateway and lease-token identity.")
+                publishWorkerMessage("Cancellation blocked: controller, local record or secure lease token mismatch. No job was released; Gateway is quarantined.")
+                return
+            }
+
+            val decision = GatewayCancellationPolicy.assess(
+                GatewayCancellationSnapshot(
+                    controllerState = server.state,
+                    localJobState = local.job.state.name,
+                    localAttemptState = local.attempt.state.name,
+                    transactionId = local.attempt.transactionId,
+                    sendStartedAt = local.attempt.sendStartedAt,
+                    sentAt = local.attempt.sentAt
+                )
+            )
+            publishWorkerMessage(
+                when (decision) {
+                    com.aziitech.devmonitor.gateway.worker.GatewayCancellationDecision.CANCEL_BEFORE_SEND ->
+                        "Cancelling the exact leased job before SMS submission…"
+                    com.aziitech.devmonitor.gateway.worker.GatewayCancellationDecision.REQUIRE_CONTROLLER_CLOSURE_AND_COOLDOWN ->
+                        "Requesting controller closure of the confirmed-sent attempt and its four-minute cooldown…"
+                    com.aziitech.devmonitor.gateway.worker.GatewayCancellationDecision.BLOCK_AND_QUARANTINE ->
+                        "Attempt state is uncertain. Asking the controller to quarantine it; it will not be released."
+                }
+            )
+            val result = controller.cancelAttempt(
+                jobId = server.jobId,
+                attemptId = server.attemptId,
+                reason = "Operator requested cancellation from Gateway phone",
+                ledger = ledger,
+                leaseTokens = leaseTokens,
+                transactionGate = gate
+            )
+            val message = when (result.outcome) {
+                "CANCELLED_BEFORE_SEND" ->
+                    "Job cancelled before SMS submission. The controller confirmed closure; no SMS was sent."
+                "CANCELLED_AFTER_SEND" ->
+                    "Confirmed-sent attempt closed. Cooldown · four minutes from the controller deadline; no new query until it expires."
+                "BLOCKED_QUARANTINED" ->
+                    "Cancellation was blocked because the attempt was uncertain. Controller and local channel are quarantined; operator reconciliation is required."
+                else -> "Controller returned an unrecognised cancellation outcome. Treat this attempt as unresolved."
+            }
+            publishWorkerMessage(message)
+        } catch (failure: Exception) {
+            gate.quarantine("Operator cancellation outcome is uncertain: " + (failure.message ?: "controller request failed"))
+            publishWorkerMessage("Cancellation not confirmed. The channel has been quarantined because the controller response may be uncertain. Do not retry or assume the job was cancelled.")
+        } finally {
+            ledger.close()
+            if (wasRunning) startHeartbeatLoop()
+        }
+    }
+
+    private fun publishWorkerMessage(message: String) {
+        getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
+            .putString(KEY_WORKER_MESSAGE, message)
+            .apply()
+        sendBroadcast(Intent(ACTION_STATE_CHANGED).setPackage(packageName)
+            .putExtra(EXTRA_STATE, readState(this))
+            .putExtra(EXTRA_STATUS, message))
+        updateNotification(message)
+    }
+
     private fun cooldownStatusText(deadline: Instant?): String {
         val remainingSeconds = deadline?.let {
             Duration.between(Instant.now(), it).seconds.coerceAtLeast(0)
@@ -414,11 +532,14 @@ class GatewayForegroundService : Service() {
         const val ACTION_PAUSE = "com.aziitech.devmonitor.gateway.action.PAUSE"
         const val ACTION_RESUME = "com.aziitech.devmonitor.gateway.action.RESUME"
         const val ACTION_STOP = "com.aziitech.devmonitor.gateway.action.STOP"
+        const val ACTION_CANCEL_ACTIVE = "com.aziitech.devmonitor.gateway.action.CANCEL_ACTIVE"
         const val ACTION_STATE_CHANGED = "com.aziitech.devmonitor.gateway.action.STATE_CHANGED"
         const val EXTRA_STATE = "worker_state"
+        const val EXTRA_STATUS = "worker_status"
 
         const val PREFERENCES = "devmonitor_gateway_runtime"
         const val KEY_CONTROLLER_URL = "controller_base_url"
+        const val KEY_WORKER_MESSAGE = "worker_message"
         private const val KEY_WORKER_STATE = "worker_state"
         private const val CHANNEL_ID = "gateway_worker_status"
         private const val NOTIFICATION_ID = 5300
