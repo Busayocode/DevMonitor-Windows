@@ -72,7 +72,7 @@ class GatewayInboundSmsStore(context: Context) {
     fun markDecision(fingerprint: String, state: String, note: String? = null): Boolean {
         require(fingerprint.isNotBlank())
         require(state in setOf(
-            "ACCEPTED_PENDING_CONTROLLER", "SUBMITTED_TO_CONTROLLER", "SUBMISSION_UNCERTAIN",
+            "ACCEPTED_PENDING_CONTROLLER", "SUBMISSION_IN_PROGRESS", "SUBMITTED_TO_CONTROLLER", "SUBMISSION_UNCERTAIN",
             "UNASSIGNED_INVALID", "UNASSIGNED_NO_TRANSACTION",
             "UNASSIGNED_LATE", "UNASSIGNED_DRAINING", "DUPLICATE", "QUARANTINED"
         ))
@@ -135,6 +135,24 @@ class GatewayInboundSmsStore(context: Context) {
             )
         }
         return rows
+    }
+
+    /**
+     * Write-ahead marker: after this transition the result POST must never be
+     * automatically replayed after process death, because the server may have
+     * committed it even if the client never received the response.
+     */
+    @Synchronized
+    fun markSubmissionStarted(fingerprint: String): Boolean {
+        val values = ContentValues().apply {
+            put("processing_state", "SUBMISSION_IN_PROGRESS")
+            put("decision_note", "Controller result POST started; restart recovery must treat outcome as uncertain")
+        }
+        return helper.writableDatabase.update(
+            "inbound_3030", values,
+            "fingerprint = ? AND processing_state = 'ACCEPTED_PENDING_CONTROLLER'",
+            arrayOf(fingerprint)
+        ) == 1
     }
 
     @Synchronized
