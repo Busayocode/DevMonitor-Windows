@@ -457,3 +457,18 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - [ ] Validate on a physical Globacom SIM with duplicate, delayed and out-of-order 3030 messages.
 
 **Important protocol risk:** 3030 replies do not echo the requested device/partner identifier. With a zero-second drain, a delayed duplicate that arrives only after the next transaction starts may be indistinguishable from that next transaction's reply. Exact fingerprint duplicates, response deadlines, durable attempt matching and quarantine remain mandatory, but they cannot eliminate this protocol-level ambiguity. Live dispatch remains disabled until the integrated flow and physical-device tests pass.
+
+## 31. Controlled 3030 reply processing wired into Gateway service — 16 Nov 2026
+
+- [x] Foreground service now restores controller/local attempt state through the production recovery adapter before reading unassigned 3030 inbox rows.
+- [x] Reply processing runs only when recovery confirms the exact controller attempt is waiting for its reply.
+- [x] Valid replies are correlated and durably staged, revalidated against the original SMS body and exact local AWAITING_REPLY attempt, then submitted through the write-ahead guarded controller result path.
+- [x] Interrupted or uncertain result POSTs remain non-replayable and quarantine the channel.
+- [x] Foreground service uses a zero-second post-reply interval. The separate four-minute cancellation cooldown is unchanged.
+- [x] Recovery checks the gate's effective state, so an elapsed zero-second interval is treated as idle after the controller has completed the prior attempt.
+- [x] This integration does not claim jobs, send SMS, retry, or advance the queue.
+- [ ] Verify the combined recovery, inbox, controller submission, and Android build in CI.
+- [ ] Add focused tests for adapter restart recovery and the completed-attempt/zero-interval path.
+- [ ] Validate real 3030 delivery and duplicate/late-message behavior on a physical Globacom SIM.
+
+**Operational boundary:** the user-started service now performs controlled reply intake and guarded result submission for an already-active attempt. Outbound SMS and automatic queue execution remain disabled. CI and physical-device verification are still required; no live carrier transaction is claimed.
