@@ -402,3 +402,15 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - A leased attempt is marked eligible only while its lease is live and the persisted quiet/drain window has elapsed.
 - **Not yet operational:** this adapter is not wired into foreground-service startup. The service remains heartbeat-only; no job claim, SMS send, or automatic reply/result processing is enabled.
 - CI build and source package verification are required for this commit. Physical Glo SIM and live 3030 testing remain outstanding.
+
+
+## 11. Durable Android worker persistence verification — 16 Nov 2026
+
+- [x] Added Robolectric/JUnit coverage for the Android SQLite job/attempt ledger.
+- [x] Added a store-recreation test proving claimed job and attempt records survive adapter recreation.
+- [x] Added exactly-once SMS_SENT callback tests for success and failure, including duplicate/out-of-order callback rejection.
+- [x] Added unknown-attempt and non-SENDING callback rejection coverage.
+- [ ] Await Gateway Android workflow validation of these tests and the integrated APK build.
+- [ ] Expand tests to restart recovery reconciliation and channel snapshot restoration before enabling any claim/send loop.
+
+**Next implementation slice:** after these persistence tests pass, connect the restart-recovery adapter and dispatch coordinator to a worker lifecycle in a controlled, user-started foreground service. Keep the service heartbeat-only until controller claim/recovery, SIM readiness, transaction restore, reply processing and result submission are all wired and tested. Do not enable unattended SMS dispatch or select production response/drain timing from test fixtures.
