@@ -194,6 +194,9 @@ class AmbiguousRequest(BaseModel):
 class SendFailureRequest(AttemptRequest):
     failure_code: str = Field(min_length=1, max_length=100)
 
+class GatewayCancellationRequest(AttemptRequest):
+    reason: str | None = Field(default=None, max_length=240)
+
 
 class CancellationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -719,6 +722,32 @@ def submit_gateway_result(
     if not accepted:
         raise HTTPException(status_code=409, detail="Result does not match a live gateway attempt")
     return {"job_id": job_id, "state": "COMPLETED", "cache_updated_if_newer": True}
+
+
+@app.post("/v1/gateway/jobs/{job_id}/cancel")
+def cancel_gateway_attempt(
+    job_id: UUID,
+    body: GatewayCancellationRequest,
+    gateway=Depends(get_current_gateway),
+    connection=Depends(get_db),
+):
+    # The database function binds cancellation to the authenticated Gateway,
+    # exact job, exact attempt and its opaque lease token. Replays are idempotent.
+    row = connection.execute(
+        """
+        SELECT * FROM dm_cancel_gateway_attempt(%s,%s,%s,%s,%s)
+        """,
+        (gateway["id"], job_id, body.attempt_id, body.lease_token, body.reason),
+    ).fetchone()
+    if row is None or not row["accepted"]:
+        raise HTTPException(status_code=409, detail="Cancellation did not match the active Gateway attempt")
+    return jsonable_encoder({
+        "job_id": job_id,
+        "attempt_id": body.attempt_id,
+        "outcome": row["outcome"],
+        "cooldown_until": row["cooldown_until"],
+        "cooldown_seconds": 240 if row["outcome"] == "CANCELLED_AFTER_SEND" else 0,
+    })
 
 
 @app.post("/v1/gateway/jobs/{job_id}/ambiguous")
