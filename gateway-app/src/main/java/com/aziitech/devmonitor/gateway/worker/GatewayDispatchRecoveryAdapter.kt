@@ -7,6 +7,7 @@ enum class GatewayRecoveryStatus {
     NO_ACTIVE_WORK,
     ELIGIBLE_LEASED_WORK,
     WAITING_FOR_DRAIN_WINDOW,
+    WAITING_FOR_CANCELLATION_COOLDOWN,
     RESUME_WAITING_FOR_REPLY,
     QUARANTINED
 }
@@ -43,6 +44,14 @@ class GatewayDispatchRecoveryAdapter {
                 return GatewayRecoveryResult(
                     GatewayRecoveryStatus.NO_ACTIVE_WORK,
                     "Controller, local ledger and elapsed channel interval report no unresolved dispatch."
+                )
+            }
+            if (unresolved.isEmpty() && effectiveState == SmsChannelState.CANCELLATION_COOLDOWN &&
+                channel.cancellationCooldownUntil?.let { now.isBefore(it) } == true
+            ) {
+                return GatewayRecoveryResult(
+                    GatewayRecoveryStatus.WAITING_FOR_CANCELLATION_COOLDOWN,
+                    "Cancellation cooldown is active; wait until its persisted deadline before another 3030 query."
                 )
             }
             if (unresolved.isEmpty() && effectiveState == SmsChannelState.DRAINING &&
@@ -122,12 +131,22 @@ class GatewayDispatchRecoveryAdapter {
             if (!now.isBefore(leaseExpiry)) {
                 return quarantine(gate, "Controller lease has expired; the SMS must not be sent.", server.jobId, server.attemptId)
             }
-            if (gate.state(now) != SmsChannelState.IDLE) {
-                return GatewayRecoveryResult(
+            when (gate.state(now)) {
+                SmsChannelState.CANCELLATION_COOLDOWN -> return GatewayRecoveryResult(
+                    GatewayRecoveryStatus.WAITING_FOR_CANCELLATION_COOLDOWN,
+                    "Cancellation cooldown is active; wait until its persisted deadline before dispatch.",
+                    server.jobId,
+                    server.attemptId
+                )
+                SmsChannelState.DRAINING -> return GatewayRecoveryResult(
                     GatewayRecoveryStatus.WAITING_FOR_DRAIN_WINDOW,
                     "The previous 3030 quiet period has not elapsed; no new SMS may be sent.",
                     server.jobId,
                     server.attemptId
+                )
+                SmsChannelState.IDLE -> Unit
+                SmsChannelState.ACTIVE, SmsChannelState.QUARANTINED -> return quarantine(
+                    gate, "SMS channel is not safe for another dispatch.", server.jobId, server.attemptId
                 )
             }
             return GatewayRecoveryResult(
