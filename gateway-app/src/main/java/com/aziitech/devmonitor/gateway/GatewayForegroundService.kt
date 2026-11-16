@@ -103,16 +103,19 @@ class GatewayForegroundService : Service() {
                                 ?: throw IllegalStateException("Gateway credential is unavailable")
                         }
                     )
+                    val readiness = GatewayPhoneReadiness.inspect(applicationContext)
+                    val networkReady = hasValidatedNetwork()
                     val heartbeat = client.heartbeat(
                         appVersion = BuildConfig.VERSION_NAME,
-                        smsPermissionReady = false,
-                        telephonyReady = false,
-                        networkReady = hasValidatedNetwork()
+                        smsPermissionReady = readiness.smsPermissionReady,
+                        telephonyReady = readiness.telephonyReady,
+                        networkReady = networkReady
                     )
                     val callbackNote = reconcileDurableSendCallback(client)
                     saveState(STATE_RUNNING)
                     updateNotification(
                         "Controller heartbeat acknowledged (${heartbeat.healthState}). " +
+                            readiness.summary + ". " +
                             (callbackNote ?: "SMS queue dispatch and sending remain disabled.")
                     )
                 } catch (cancelled: CancellationException) {
