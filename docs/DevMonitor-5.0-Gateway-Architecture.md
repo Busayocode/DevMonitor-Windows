@@ -503,3 +503,26 @@ Test on the actual Android versions and manufacturers intended for deployment:
 8. Battery drain, data use and controller heartbeat accuracy during a long soak test.
 
 Success means the gateway remains visibly and honestly available under supported conditions, recovers safely when permitted, and never claims uninterrupted operation that Android cannot guarantee. Battery exemption improves the chance of timely background availability; it is not a guarantee against force-stop, OEM task killers, loss of connectivity, revoked permissions or OS policy changes.
+
+
+## 18. Cancellation and server-side attempt closure — required controller contract
+
+**Status: contract requirement only; no cancellation endpoint is implemented by this Android repository.**
+
+The Android worker currently has an authenticated controller transition to mark an attempt `AMBIGUOUS`, but that transition is not cancellation and must not release the gateway for another job. The current controller client has no documented cancel/close operation. Do not guess an endpoint or treat an HTTP acknowledgement from the ambiguity route as cancellation.
+
+Before enabling an operator Cancel action, the controller implementation must provide an atomic, idempotent cancellation operation bound to the exact job, attempt, gateway identity and lease token. The server must serialize cancellation against the `LEASED → SENDING → AWAITING_REPLY` transition so races cannot result in a false cancellation.
+
+Required outcomes:
+
+- **Before send:** if the server confirms the attempt is still `LEASED` and no send transition has begun, atomically mark the attempt/job `CANCELLED`, release the lease, and acknowledge `CANCELLED_BEFORE_SEND`. The phone must not invoke SmsManager.
+- **After confirmed submission:** if the phone has a durable successful Android `SMS_SENT` callback and the exact attempt is `AWAITING_REPLY`, the server may acknowledge `CANCELLED_AFTER_SUBMISSION` only by atomically closing that exact attempt as terminal/cancelled, retaining an audit record of the send timestamp and cancellation timestamp, and preventing that attempt from accepting a later result. The server must not imply that the already-submitted carrier SMS was recalled.
+- The after-submission acknowledgement must establish a server-side no-new-assignment barrier for that gateway until the phone's persisted four-minute cancellation cooldown expires. The next claim must be rejected or return no work while that barrier is active.
+- A delayed 3030 reply for a cancelled attempt must be rejected or quarantined by exact attempt identity; it must never complete a later job.
+- **Uncertain send:** if the state is `SENDING` without a durable successful callback, or the server/local states disagree, do not cancel/release/retry automatically. Mark or retain the attempt as ambiguous and require explicit reconciliation.
+- Cancellation requests must be idempotent. A lost HTTP response must be safely retried with the same cancellation request identity and must return the original outcome, not create a second transition.
+- The controller must return the authoritative outcome and cooldown deadline. The phone persists the returned deadline before showing cancellation as accepted. If persistence fails after server acknowledgement, the phone must quarantine and reconcile on restart.
+
+The Android-side `GatewayCancellationPolicy` implements only the local decision guard: a clean `LEASED` attempt is eligible for a pre-send cancellation request; a fully evidenced `AWAITING_REPLY` attempt requires controller closure plus cooldown; all uncertain/mismatched states block and quarantine. It does not make network calls, mutate job state, or claim cancellation succeeded.
+
+**Do not enable the live Cancel control or release another job after four minutes until the actual controller backend implements and tests this contract.** The four-minute timer is a local safety window, not proof that the controller released the assignment.
