@@ -12,7 +12,10 @@ data class StoredGatewayInboundSms(
     val receivedAtMillis: Long,
     val subscriptionId: Int?,
     val body: String,
-    val processingState: String
+    val processingState: String,
+    val matchedJobId: String? = null,
+    val matchedAttemptId: String? = null,
+    val normalizedPayload: String? = null
 )
 
 /**
@@ -69,7 +72,8 @@ class GatewayInboundSmsStore(context: Context) {
     fun markDecision(fingerprint: String, state: String, note: String? = null): Boolean {
         require(fingerprint.isNotBlank())
         require(state in setOf(
-            "ACCEPTED_PENDING_CONTROLLER", "UNASSIGNED_INVALID", "UNASSIGNED_NO_TRANSACTION",
+            "ACCEPTED_PENDING_CONTROLLER", "SUBMITTED_TO_CONTROLLER", "SUBMISSION_UNCERTAIN",
+            "UNASSIGNED_INVALID", "UNASSIGNED_NO_TRANSACTION",
             "UNASSIGNED_LATE", "UNASSIGNED_DRAINING", "DUPLICATE", "QUARANTINED"
         ))
         val values = ContentValues().apply {
@@ -80,6 +84,62 @@ class GatewayInboundSmsStore(context: Context) {
             "inbound_3030", values, "fingerprint = ?", arrayOf(fingerprint)
         ) == 1
     }
+
+    /**
+     * Durably stages a uniquely correlated reply before any controller network call.
+     * The attempt identity and canonical parsed payload are retained for audit/recovery.
+     */
+    @Synchronized
+    fun stageAccepted(
+        fingerprint: String,
+        jobId: String,
+        attemptId: String,
+        normalizedPayload: String
+    ): Boolean {
+        require(fingerprint.isNotBlank() && jobId.isNotBlank() && attemptId.isNotBlank())
+        require(normalizedPayload.isNotBlank())
+        val values = ContentValues().apply {
+            put("processing_state", "ACCEPTED_PENDING_CONTROLLER")
+            put("matched_job_id", jobId)
+            put("matched_attempt_id", attemptId)
+            put("normalized_payload", normalizedPayload)
+            put("decision_note", "Correlated to durable Gateway attempt $attemptId; awaiting controller submission")
+        }
+        return helper.writableDatabase.update(
+            "inbound_3030", values,
+            "fingerprint = ? AND processing_state = 'RECEIVED_UNASSIGNED'",
+            arrayOf(fingerprint)
+        ) == 1
+    }
+
+    @Synchronized
+    fun loadPendingController(limit: Int = 20): List<StoredGatewayInboundSms> {
+        val rows = ArrayList<StoredGatewayInboundSms>()
+        helper.readableDatabase.rawQuery(
+            "SELECT fingerprint, sender, received_at, subscription_id, body, processing_state, " +
+                "matched_job_id, matched_attempt_id, normalized_payload " +
+                "FROM inbound_3030 WHERE processing_state = 'ACCEPTED_PENDING_CONTROLLER' " +
+                "ORDER BY received_at ASC, row_id ASC LIMIT ?",
+            arrayOf(limit.coerceIn(1, MAX_ROWS).toString())
+        ).use { cursor ->
+            while (cursor.moveToNext()) rows += StoredGatewayInboundSms(
+                fingerprint = cursor.getString(0),
+                sender = cursor.getString(1),
+                receivedAtMillis = cursor.getLong(2),
+                subscriptionId = if (cursor.isNull(3)) null else cursor.getInt(3),
+                body = cursor.getString(4),
+                processingState = cursor.getString(5),
+                matchedJobId = cursor.getString(6),
+                matchedAttemptId = cursor.getString(7),
+                normalizedPayload = cursor.getString(8)
+            )
+        }
+        return rows
+    }
+
+    @Synchronized
+    fun markSubmissionUncertain(fingerprint: String, note: String): Boolean =
+        markDecision(fingerprint, "SUBMISSION_UNCERTAIN", note)
 
     @Synchronized
     fun loadUnassigned(limit: Int = 50): List<StoredGatewayInboundSms> {
@@ -127,7 +187,10 @@ class GatewayInboundSmsStore(context: Context) {
                     subscription_id INTEGER,
                     body TEXT NOT NULL,
                     processing_state TEXT NOT NULL,
-                    decision_note TEXT
+                    decision_note TEXT,
+                    matched_job_id TEXT,
+                    matched_attempt_id TEXT,
+                    normalized_payload TEXT
                 )
                 """.trimIndent()
             )
@@ -138,11 +201,16 @@ class GatewayInboundSmsStore(context: Context) {
             if (oldVersion < 2) {
                 db.execSQL("ALTER TABLE inbound_3030 ADD COLUMN decision_note TEXT")
             }
+            if (oldVersion < 3) {
+                db.execSQL("ALTER TABLE inbound_3030 ADD COLUMN matched_job_id TEXT")
+                db.execSQL("ALTER TABLE inbound_3030 ADD COLUMN matched_attempt_id TEXT")
+                db.execSQL("ALTER TABLE inbound_3030 ADD COLUMN normalized_payload TEXT")
+            }
         }
 
         companion object {
             private const val DATABASE_NAME = "devmonitor_gateway_inbox.db"
-            private const val DATABASE_VERSION = 2
+            private const val DATABASE_VERSION = 3
             const val MAX_ROWS = 200
         }
     }
