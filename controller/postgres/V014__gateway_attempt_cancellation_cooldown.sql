@@ -18,8 +18,7 @@ CREATE INDEX IF NOT EXISTS dm_gateway_cooldown_idx
     ON dm_gateways(cancellation_cooldown_until)
     WHERE cancellation_cooldown_until IS NOT NULL;
 
--- Keep the original atomic scheduler intact, but put a durable cooldown barrier
--- in front of every claim. The old function also locks the gateway row itself.
+-- Serialize every claim through the Gateway row and enforce the durable deadline.
 ALTER FUNCTION dm_claim_next_job(UUID, INTEGER)
     RENAME TO dm_claim_next_job_without_cooldown;
 
@@ -37,7 +36,8 @@ RETURNS TABLE (
     lease_expires_at TIMESTAMPTZ
 )
 LANGUAGE plpgsql AS $$
-DECLARE cooldown_until TIMESTAMPTZ;
+DECLARE
+    cooldown_until TIMESTAMPTZ;
 BEGIN
     SELECT g.cancellation_cooldown_until
       INTO cooldown_until
@@ -78,8 +78,7 @@ DECLARE
     prior dm_gateway_attempt_cancellations%ROWTYPE;
     next_cooldown TIMESTAMPTZ;
 BEGIN
-    -- Lock order starts at gateway, then exact attempt, then job. This serializes
-    -- cancellation with claims and never frees a different or newer attempt.
+    -- Shared lock order: Gateway, exact attempt, then job.
     SELECT * INTO gateway_row FROM dm_gateways
      WHERE id=p_gateway_id AND revoked_at IS NULL
      FOR UPDATE;
@@ -88,99 +87,8 @@ BEGIN
         RETURN;
     END IF;
 
-    IF p_lease_token IS NULL OR p_lease_token !~ '^[0-9A-Fa-f]{64,256}
-    SELECT * INTO job_row FROM dm_check_jobs WHERE id=p_job_id FOR UPDATE;
-    IF NOT FOUND THEN
-        RETURN QUERY SELECT FALSE,'JOB_NOT_FOUND'::TEXT,NULL::TIMESTAMPTZ;
-        RETURN;
-    END IF;
-
-    IF attempt_row.state='LEASED'
-       AND job_row.state='LEASED'
-       AND attempt_row.send_started_at IS NULL
-       AND attempt_row.sms_sent_at IS NULL THEN
-        UPDATE dm_job_attempts
-           SET state='REJECTED',completed_at=now(),failure_code='USER_CANCELLED_BEFORE_SEND'
-         WHERE id=p_attempt_id;
-        UPDATE dm_check_jobs SET state='CANCELLED',updated_at=now()
-         WHERE id=p_job_id AND state='LEASED';
-        INSERT INTO dm_gateway_attempt_cancellations(
-            attempt_id,job_id,gateway_id,outcome,reason
-        ) VALUES (
-            p_attempt_id,p_job_id,p_gateway_id,'CANCELLED_BEFORE_SEND',
-            NULLIF(left(trim(COALESCE(p_reason,'')),240),'')
-        );
-        INSERT INTO dm_gateway_audit_events(
-            tenant_id,gateway_id,job_id,event_type,details
-        ) VALUES (
-            job_row.tenant_id,p_gateway_id,p_job_id,'GATEWAY_ATTEMPT_CANCELLED_BEFORE_SEND',
-            jsonb_build_object('attempt_id',p_attempt_id,'reason',p_reason)
-        );
-        RETURN QUERY SELECT TRUE,'CANCELLED_BEFORE_SEND'::TEXT,NULL::TIMESTAMPTZ;
-        RETURN;
-    END IF;
-
-    IF attempt_row.state='AWAITING_REPLY'
-       AND job_row.state='AWAITING_REPLY'
-       AND attempt_row.send_started_at IS NOT NULL
-       AND attempt_row.sms_sent_at IS NOT NULL THEN
-        next_cooldown := now()+INTERVAL '4 minutes';
-        UPDATE dm_job_attempts
-           SET state='REJECTED',completed_at=now(),failure_code='USER_CANCELLED_AFTER_SEND'
-         WHERE id=p_attempt_id;
-        UPDATE dm_check_jobs SET state='CANCELLED',updated_at=now()
-         WHERE id=p_job_id AND state='AWAITING_REPLY';
-        UPDATE dm_gateways
-           SET cancellation_cooldown_until=next_cooldown,updated_at=now()
-         WHERE id=p_gateway_id;
-        INSERT INTO dm_gateway_attempt_cancellations(
-            attempt_id,job_id,gateway_id,outcome,reason,cooldown_until
-        ) VALUES (
-            p_attempt_id,p_job_id,p_gateway_id,'CANCELLED_AFTER_SEND',
-            NULLIF(left(trim(COALESCE(p_reason,'')),240),''),next_cooldown
-        );
-        INSERT INTO dm_gateway_audit_events(
-            tenant_id,gateway_id,job_id,event_type,details
-        ) VALUES (
-            job_row.tenant_id,p_gateway_id,p_job_id,'GATEWAY_ATTEMPT_CANCELLED_AFTER_SEND',
-            jsonb_build_object('attempt_id',p_attempt_id,'cooldown_until',next_cooldown,'reason',p_reason)
-        );
-        RETURN QUERY SELECT TRUE,'CANCELLED_AFTER_SEND'::TEXT,next_cooldown;
-        RETURN;
-    END IF;
-
-    -- SENDING means carrier submission may have happened but SMS_SENT evidence is
-    -- absent; AMBIGUOUS is likewise unresolved. Neither may be released or retried.
-    IF attempt_row.state IN ('SENDING','AMBIGUOUS')
-       OR job_row.state IN ('SENDING','AMBIGUOUS') THEN
-        UPDATE dm_gateways
-           SET health_state='QUARANTINED',
-               quarantined_reason='Cancellation requested while SMS submission/result is uncertain',
-               accept_pool_jobs=FALSE,updated_at=now()
-         WHERE id=p_gateway_id;
-        INSERT INTO dm_gateway_attempt_cancellations(
-            attempt_id,job_id,gateway_id,outcome,reason
-        ) VALUES (
-            p_attempt_id,p_job_id,p_gateway_id,'BLOCKED_QUARANTINED',
-            NULLIF(left(trim(COALESCE(p_reason,'')),240),'')
-        );
-        INSERT INTO dm_gateway_audit_events(
-            tenant_id,gateway_id,job_id,event_type,details
-        ) VALUES (
-            job_row.tenant_id,p_gateway_id,p_job_id,'GATEWAY_CANCELLATION_BLOCKED_UNCERTAIN_SEND',
-            jsonb_build_object('attempt_id',p_attempt_id,'attempt_state',attempt_row.state,'reason',p_reason)
-        );
-        RETURN QUERY SELECT TRUE,'BLOCKED_QUARANTINED'::TEXT,NULL::TIMESTAMPTZ;
-        RETURN;
-    END IF;
-
-    RETURN QUERY SELECT FALSE,'STATE_MISMATCH'::TEXT,NULL::TIMESTAMPTZ;
-END;
-$$;
-
-COMMIT;
-
-       OR length(p_lease_token) % 2 <> 0 THEN
+    -- Lease tokens are 32 random bytes encoded as 64 hex characters.
+    IF p_lease_token IS NULL OR p_lease_token !~ '^[0-9A-Fa-f]{64}$' THEN
         RETURN QUERY SELECT FALSE,'ATTEMPT_MISMATCH'::TEXT,NULL::TIMESTAMPTZ;
         RETURN;
     END IF;
@@ -194,8 +102,7 @@ COMMIT;
         RETURN;
     END IF;
 
-    -- Validate the opaque lease token even for idempotent retries; knowledge of
-    -- an attempt UUID alone must never reveal or replay its cancellation result.
+    -- Idempotent replay is allowed only after validating the same secret token.
     SELECT * INTO prior FROM dm_gateway_attempt_cancellations
      WHERE attempt_id=p_attempt_id AND gateway_id=p_gateway_id AND job_id=p_job_id;
     IF FOUND THEN
@@ -263,8 +170,7 @@ COMMIT;
         RETURN;
     END IF;
 
-    -- SENDING means carrier submission may have happened but SMS_SENT evidence is
-    -- absent; AMBIGUOUS is likewise unresolved. Neither may be released or retried.
+    -- Possible transmission without positive SMS_SENT evidence cannot be freed.
     IF attempt_row.state IN ('SENDING','AMBIGUOUS')
        OR job_row.state IN ('SENDING','AMBIGUOUS') THEN
         UPDATE dm_gateways
