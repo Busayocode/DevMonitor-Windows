@@ -99,6 +99,13 @@ The OpenAPI contract and reference FastAPI handlers are now implemented in sourc
 
 ## Implementation update — 15 November 2026
 
-The controller has advanced beyond the initial V001–V008 description above. The current foundation branch contains migrations **V001–V013**, including request-level multi-Gateway scheduling, queue visibility/cancellation/analytics, heartbeat failover and Gateway health-transition audit. The current API/service implementation and validation status are tracked in `docs/DevMonitor-5.0-Phase-3-Controller-Foundation.md`.
+The controller has advanced beyond the initial V001–V008 description above. The current foundation branch contains migrations **V001–V014**, including request-level multi-Gateway scheduling, queue visibility/cancellation/analytics, heartbeat failover and Gateway health-transition audit. The current API/service implementation and validation status are tracked in `docs/DevMonitor-5.0-Phase-3-Controller-Foundation.md`.
 
 Do not use the older V001–V008 list in this README as the current complete migration inventory. Apply V001–V013 in order to a clean, dedicated test database when performing the next validation. This remains an undeployed reference implementation; no production database or paid hosting has been provisioned.
+
+
+## Implementation update — Gateway cancellation safety
+
+Migration V014 adds an authenticated exact-attempt Gateway cancellation operation and a durable server-side four-minute claim barrier. A pre-send LEASED attempt can be closed immediately only when no send-start/SMS_SENT evidence exists. An AWAITING_REPLY attempt can be closed only when the server has the exact successful SMS submission timestamp; the controller records a four-minute deadline and blocks subsequent claims until it expires. SENDING or AMBIGUOUS attempts are not released and cause the Gateway to be quarantined. Cancellation retries return the original recorded outcome/deadline.
+
+The phone worker must still be wired to `POST /v1/gateway/jobs/{job_id}/cancel`; this backend change does not enable SMS sending or create a live Cancel button. CI includes a PostgreSQL integration test for pre-send cancellation, post-send cooldown, idempotent retry and claim blocking. The service remains source-only until a dedicated PostgreSQL database and HTTPS hosting are provisioned.
