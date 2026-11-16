@@ -446,3 +446,10 @@ class GatewayWorkerControllerClient(
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }
+
+
+data class GatewayCancellationResult(
+    val outcome: String,
+    val cooldownUntil: Instant?,
+    val cooldownSeconds: Int
+)
