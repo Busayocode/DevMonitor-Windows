@@ -13,6 +13,10 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
 import com.aziitech.devmonitor.gateway.worker.AndroidGatewayCredentialStore
+import com.aziitech.devmonitor.gateway.worker.AndroidGatewayLeaseTokenStore
+import com.aziitech.devmonitor.gateway.worker.GatewayAttemptState
+import com.aziitech.devmonitor.gateway.worker.GatewaySmsDispatchCoordinator
+import com.aziitech.devmonitor.gateway.worker.SqliteSmsChannelStateStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -105,9 +109,11 @@ class GatewayForegroundService : Service() {
                         telephonyReady = false,
                         networkReady = hasValidatedNetwork()
                     )
+                    val callbackNote = reconcileDurableSendCallback(client)
                     saveState(STATE_RUNNING)
                     updateNotification(
-                        "Controller heartbeat acknowledged (${heartbeat.healthState}). SMS processing is disabled."
+                        "Controller heartbeat acknowledged (${heartbeat.healthState}). " +
+                            (callbackNote ?: "SMS queue dispatch and sending remain disabled.")
                     )
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -119,6 +125,54 @@ class GatewayForegroundService : Service() {
                 }
                 delay(HEARTBEAT_INTERVAL_MS)
             }
+        }
+    }
+
+
+    /**
+     * Reconcile only an already-persisted Android SMS_SENT callback.
+     *
+     * This never claims work, sends/retries SMS, or treats a received 3030
+     * message as a result. A callback is replayed only when the controller's
+     * single active attempt exactly matches the durable local attempt.
+     */
+    private suspend fun reconcileDurableSendCallback(
+        controller: GatewayWorkerControllerClient
+    ): String? {
+        val ledger = SqliteSmsChannelStateStore(applicationContext)
+        val leaseTokens = AndroidGatewayLeaseTokenStore(applicationContext)
+        return try {
+            val unresolved = ledger.loadUnresolvedDispatches()
+            if (unresolved.size != 1) return null
+            val local = unresolved.single()
+            if (local.attempt.state !in setOf(
+                    GatewayAttemptState.AWAITING_REPLY,
+                    GatewayAttemptState.SEND_FAILED
+                )
+            ) return null
+
+            val server = controller.fetchActiveAttempt(leaseTokens) ?: return null
+            if (server.jobId != local.job.jobId ||
+                server.attemptId != local.attempt.attemptId ||
+                server.state != "SENDING"
+            ) return null
+
+            GatewaySmsDispatchCoordinator(applicationContext).reconcileSendCallback(
+                jobId = local.job.jobId,
+                attemptId = local.attempt.attemptId,
+                controller = controller,
+                ledger = ledger,
+                leaseTokens = leaseTokens
+            )
+            when (local.attempt.state) {
+                GatewayAttemptState.AWAITING_REPLY ->
+                    "A previously recorded successful Android send callback was reconciled. Waiting for the matching 3030 reply; no resend."
+                GatewayAttemptState.SEND_FAILED ->
+                    "Android reported that the SMS send failed. The attempt was marked for manual reconciliation; no retry."
+                else -> null
+            }
+        } finally {
+            ledger.close()
         }
     }
 
