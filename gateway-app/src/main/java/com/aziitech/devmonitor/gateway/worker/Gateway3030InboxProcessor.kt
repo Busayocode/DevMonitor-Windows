@@ -21,7 +21,7 @@ data class GatewayInboxProcessingSummary(
  * This class is intentionally not invoked by the SMS BroadcastReceiver. The
  * worker must call it only after it has restored the durable per-phone channel
  * gate and configured a reviewed post-reply quiet period. Accepted results are
- * staged locally; this class never submits controller results or starts sends.
+ * staged locally first. Controller result submission is a separate guarded step; this class never starts sends.
  */
 class Gateway3030InboxProcessor(
     private val inbox: GatewayInboundSmsStore,
@@ -58,13 +58,19 @@ class Gateway3030InboxProcessor(
                         row.fingerprint, receivedAt, parsed.value.toCanonicalPayload()
                     )) {
                         is InboundSmsDecision.Accepted -> {
-                            inbox.stageAccepted(
+                            val staged = inbox.stageAccepted(
                                 fingerprint = row.fingerprint,
                                 jobId = decision.transaction.jobId,
                                 attemptId = decision.transaction.attemptId,
                                 normalizedPayload = decision.normalizedPayload
                             )
-                            accepted++
+                            if (staged) {
+                                accepted++
+                            } else {
+                                gate.quarantine("3030 reply was correlated but could not be durably staged")
+                                inbox.markDecision(row.fingerprint, "QUARANTINED", "Could not persist correlated attempt identity")
+                                unassigned++
+                            }
                         }
                         is InboundSmsDecision.Unassigned -> {
                             val state = when {
