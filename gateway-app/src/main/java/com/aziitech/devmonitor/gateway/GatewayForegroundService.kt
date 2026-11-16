@@ -178,6 +178,7 @@ class GatewayForegroundService : Service() {
                 GatewayRecoveryStatus.NO_ACTIVE_WORK -> "No active controller attempt. Automatic claim/send remains disabled."
                 GatewayRecoveryStatus.ELIGIBLE_LEASED_WORK -> "Controller lease found, but automatic claim/send remains disabled."
                 GatewayRecoveryStatus.WAITING_FOR_DRAIN_WINDOW -> "Waiting for the configured channel interval."
+                GatewayRecoveryStatus.WAITING_FOR_CANCELLATION_COOLDOWN -> "Cooldown active: waiting for the four-minute cancellation safety window."
                 GatewayRecoveryStatus.QUARANTINED -> "Gateway channel quarantined: " + recovery.reason
             }
         } finally {
@@ -215,6 +216,8 @@ class GatewayForegroundService : Service() {
                         "An existing attempt is waiting for its 3030 reply. No new job was claimed."
                     GatewayRecoveryStatus.WAITING_FOR_DRAIN_WINDOW ->
                         "The SMS channel is not idle. No new job was claimed."
+                    GatewayRecoveryStatus.WAITING_FOR_CANCELLATION_COOLDOWN ->
+                        "Cooldown active: no new job will be claimed until the four-minute cancellation window expires."
                     GatewayRecoveryStatus.QUARANTINED ->
                         "Gateway channel quarantined: " + recovery.reason
                     GatewayRecoveryStatus.NO_ACTIVE_WORK -> null
