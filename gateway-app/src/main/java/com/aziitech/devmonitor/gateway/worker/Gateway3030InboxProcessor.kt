@@ -129,9 +129,15 @@ class Gateway3030InboxProcessor(
             }
 
             val receivedAt = Instant.ofEpochMilli(row.receivedAtMillis)
-            val checkedAt = runCatching { Instant.parse(attempt.sendStartedAt) }.getOrNull()
-                ?: runCatching { Instant.parse(attempt.sentAt) }.getOrNull()
+            val checkedAt = runCatching { Instant.parse(attempt.sentAt) }.getOrNull()
+                ?: runCatching { Instant.parse(attempt.sendStartedAt) }.getOrNull()
                 ?: receivedAt
+            val canonical = parsed.value.toCanonicalPayload()
+            if (row.normalizedPayload != canonical) {
+                inbox.markSubmissionUncertain(row.fingerprint, "Stored normalized payload does not match the original 3030 body")
+                gate.quarantine("3030 payload changed after correlation")
+                return@forEach
+            }
             val result = parsed.value
             val values = JSONObject()
                 .put("todaySimRegCount", result.todaySimRegCount)
@@ -145,6 +151,10 @@ class Gateway3030InboxProcessor(
 
             val businessDate = parseBusinessDate(result.reportDateTime)
                 ?: receivedAt.atZone(ZoneId.of("Africa/Lagos")).toLocalDate().toString()
+            if (!inbox.markSubmissionStarted(row.fingerprint)) {
+                gate.quarantine("Could not persist controller-submission intent before network request")
+                return@forEach
+            }
             try {
                 controller.submitResult(
                     jobId = jobId,
