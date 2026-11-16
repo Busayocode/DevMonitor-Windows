@@ -47,6 +47,10 @@ class GatewaySmsTransactionGate(
     private val store: SmsChannelStateStore,
     private val postReplyQuietPeriod: Duration
 ) {
+    companion object {
+        val CANCELLATION_COOLDOWN: Duration = Duration.ofMinutes(4)
+    }
+
     init {
         require(!postReplyQuietPeriod.isNegative) {
             "Post-reply quiet period cannot be negative"
@@ -100,11 +104,9 @@ class GatewaySmsTransactionGate(
     fun recordCancellationAfterSubmission(
         attemptId: String,
         now: Instant,
-        cooldown: Duration = Duration.ofMinutes(4),
         androidSubmissionSucceeded: Boolean
     ): Boolean {
         require(attemptId.isNotBlank())
-        require(!cooldown.isNegative && !cooldown.isZero)
         if (!androidSubmissionSucceeded) return false
         val current = store.load()
         val tx = current.transaction ?: return false
@@ -113,7 +115,7 @@ class GatewaySmsTransactionGate(
             state = SmsChannelState.CANCELLATION_COOLDOWN,
             transaction = null,
             drainUntil = null,
-            cancellationCooldownUntil = now.plus(cooldown),
+            cancellationCooldownUntil = now.plus(CANCELLATION_COOLDOWN),
             lastResolutionNote = "Cancelled after confirmed SMS submission; four-minute cooldown started."
         ))
         return true
