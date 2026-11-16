@@ -191,7 +191,7 @@ class GatewayForegroundService : Service() {
      */
     private suspend fun claimControllerWorkIfIdle(
         controller: GatewayWorkerControllerClient,
-        readiness: GatewayPhoneReadiness.Result,
+        readiness: GatewayPhoneReadinessState,
         networkReady: Boolean
     ): String? {
         if (!readiness.smsPermissionReady || !readiness.telephonyReady || !networkReady) {
