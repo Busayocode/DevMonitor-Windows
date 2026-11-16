@@ -488,3 +488,18 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - [ ] Physical multi-SIM/Globacom validation remains outstanding.
 
 **Operational boundary:** Gateway may reserve and durably record one controller-authorised job when the phone is ready. It does not transmit SMS, retry, or advance a queue. The four-minute cancellation cooldown remains separate; accepted replies retain the user-selected zero-second post-reply interval.
+
+
+## 33. Side-effect-free dispatch preflight policy — 16 Nov 2026
+
+- [x] Added a pure Gateway dispatch-preparation policy in the shared worker-core module.
+- [x] Requires durable job/attempt identity, valid canonical device code and query profile, unexpired controller lease, explicit non-negative selected SIM subscription, SMS permission readiness, selected-SIM readiness, validated network, and a positive 3030 response timeout.
+- [x] Rejects an active transaction, an unelapsed persisted drain interval, and a quarantined channel.
+- [x] Added focused unit tests for the ready path and each major rejection path, including SIM absence/no fallback, lease expiry, permissions, telephony, network, malformed device ID, active transaction, drain deadline, and quarantine.
+- [x] The policy is side-effect-free: it does not claim work, transition server/local attempt state, invoke the dispatch coordinator, or send SMS.
+- [ ] Run worker-core and Android CI tests/build; inspect results.
+- [ ] Integrate the preflight result into a controlled operator-visible preparation stage without enabling outbound SMS.
+- [ ] Implement and test the separate four-minute cancellation cooldown for Gateway before any real dispatch path is enabled. This is distinct from the zero-second post-reply interval and from the response timeout.
+- [ ] Physical multi-SIM/Globacom carrier validation remains outstanding.
+
+**Boundary:** a preflight pass means only that deterministic prerequisites look ready at the time of assessment. It is not a send authorization and does not prove live carrier delivery.
