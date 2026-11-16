@@ -533,3 +533,18 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - [ ] Only then wire the operator Cancel control and allow a new assignment after both server closure and local cooldown expiry.
 
 **Boundary:** no live cancellation control was added. An `AMBIGUOUS` acknowledgement is not cancellation and must not free a gateway. SMS sending remains disabled. This slice adds tested decision policy and documents the backend dependency; it does not claim server-side cancellation is implemented.
+
+
+## 36. Operator cancellation control and controller-enforced closure — 16 Nov 2026
+
+- [x] Added an in-app **Cancel active job** control on the Gateway phone screen. The control is available only while the user-started Gateway service is active and the installation has a pinned HTTPS controller identity.
+- [x] Cancellation pauses the heartbeat/claim loop while the operator action is processed, then resumes it if it was running.
+- [x] Before calling the cancellation endpoint, the service requires exactly one unresolved local attempt and exact agreement between the authenticated Gateway identity, controller job/attempt, local SQLite job/attempt and encrypted lease-token availability.
+- [x] The pure cancellation policy distinguishes a pre-send lease, a confirmed-sent reply wait and uncertain states. The controller remains authoritative for the final outcome; uncertain SENDING/mismatched cases must be quarantined, never freed.
+- [x] The UI and persistent notification receive a durable operator-facing status. A transport failure is reported as **not confirmed** and locally quarantines the channel; it is never shown as a successful cancellation.
+- [x] A confirmed post-send cancellation persists the exact server-supplied four-minute deadline before success is displayed. Pre-send cancellation does not create a cooldown.
+- [ ] Run Gateway Android CI for the service/UI integration and inspect APK publication.
+- [ ] Deploy the separate controller branch and configure a production HTTPS endpoint/database before the app can use the cancellation API outside CI.
+- [ ] Keep outbound SMS transmission disabled until deployment, multi-SIM checks, and controlled physical Globacom/3030 tests pass.
+
+**Operational boundary:** operator cancellation is now wired in source, but is not yet CI-verified in this slice. The backend cancellation contract is CI-verified on its separate branch, not deployed. This does not enable SMS sending or establish carrier-level readiness.
