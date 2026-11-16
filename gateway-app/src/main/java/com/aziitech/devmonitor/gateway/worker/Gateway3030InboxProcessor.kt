@@ -1,6 +1,12 @@
 package com.aziitech.devmonitor.gateway.worker
 
+import com.aziitech.devmonitor.gateway.GatewayWorkerControllerClient
+import org.json.JSONObject
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 data class GatewayInboxProcessingSummary(
     val scanned: Int,
@@ -52,10 +58,11 @@ class Gateway3030InboxProcessor(
                         row.fingerprint, receivedAt, parsed.value.toCanonicalPayload()
                     )) {
                         is InboundSmsDecision.Accepted -> {
-                            inbox.markDecision(
-                                row.fingerprint,
-                                "ACCEPTED_PENDING_CONTROLLER",
-                                "Matched locally to transaction ${decision.transaction.transactionId}; controller submission not yet enabled"
+                            inbox.stageAccepted(
+                                fingerprint = row.fingerprint,
+                                jobId = decision.transaction.jobId,
+                                attemptId = decision.transaction.attemptId,
+                                normalizedPayload = decision.normalizedPayload
                             )
                             accepted++
                         }
@@ -80,4 +87,94 @@ class Gateway3030InboxProcessor(
         }
         return GatewayInboxProcessingSummary(rows.size, accepted, unassigned, duplicates)
     }
+
+    /**
+     * Submits only replies already durably correlated by processUnassigned().
+     * A transport/HTTP exception is treated as an uncertain outcome: the channel
+     * is quarantined and the row is never automatically replayed, preventing a
+     * duplicate result submission when the server may have committed it.
+     */
+    suspend fun submitAcceptedPending(
+        controller: GatewayWorkerControllerClient,
+        ledger: SqliteSmsChannelStateStore,
+        leaseTokens: AndroidGatewayLeaseTokenStore,
+        limit: Int = 20
+    ): Int {
+        var submitted = 0
+        inbox.loadPendingController(limit).forEach { row ->
+            val jobId = row.matchedJobId
+            val attemptId = row.matchedAttemptId
+            if (jobId.isNullOrBlank() || attemptId.isNullOrBlank()) {
+                inbox.markSubmissionUncertain(row.fingerprint, "Correlated inbox row is missing its durable job/attempt identity")
+                gate.quarantine("3030 inbox correlation metadata is incomplete")
+                return@forEach
+            }
+            val parsed = Gateway3030ResponseParser.parse(row.body)
+            if (parsed !is Gateway3030ParseResult.Valid) {
+                inbox.markSubmissionUncertain(row.fingerprint, "Stored 3030 body no longer passes strict parser validation")
+                gate.quarantine("Previously correlated 3030 payload failed revalidation")
+                return@forEach
+            }
+            val attempt = ledger.loadAttempts(jobId).firstOrNull { it.attemptId == attemptId }
+            if (attempt == null || attempt.state != GatewayAttemptState.AWAITING_REPLY) {
+                inbox.markSubmissionUncertain(row.fingerprint, "Matching durable attempt is missing or no longer awaiting a reply")
+                gate.quarantine("3030 reply does not match an awaiting durable attempt")
+                return@forEach
+            }
+
+            val receivedAt = Instant.ofEpochMilli(row.receivedAtMillis)
+            val checkedAt = runCatching { Instant.parse(attempt.sendStartedAt) }.getOrNull()
+                ?: runCatching { Instant.parse(attempt.sentAt) }.getOrNull()
+                ?: receivedAt
+            val result = parsed.value
+            val values = JSONObject()
+                .put("todaySimRegCount", result.todaySimRegCount)
+                .put("mtdSimRegCount", result.mtdSimRegCount)
+                .put("active", result.active)
+                .put("bar48", result.bar48)
+                .put("bar96", result.bar96)
+                .put("duplicates", result.duplicates)
+                .put("monthlyTarget", result.monthlyTarget)
+            if (!result.reportDateTime.isNullOrBlank()) values.put("reportDateTime", result.reportDateTime)
+
+            val businessDate = parseBusinessDate(result.reportDateTime)
+                ?: receivedAt.atZone(ZoneId.of("Africa/Lagos")).toLocalDate().toString()
+            try {
+                controller.submitResult(
+                    jobId = jobId,
+                    attemptId = attemptId,
+                    leaseTokenStore = leaseTokens,
+                    ledger = ledger,
+                    businessDate = businessDate,
+                    checkedAt = checkedAt.toString(),
+                    receivedAt = receivedAt.toString(),
+                    values = values,
+                    parserVersion = "3030-v1"
+                )
+                inbox.markDecision(row.fingerprint, "SUBMITTED_TO_CONTROLLER", "Controller accepted result for attempt $attemptId")
+                submitted++
+            } catch (failure: Exception) {
+                inbox.markSubmissionUncertain(
+                    row.fingerprint,
+                    "Controller result submission outcome is uncertain (${failure.javaClass.simpleName}); automatic replay blocked"
+                )
+                gate.quarantine("3030 result submission outcome is uncertain; operator reconciliation required")
+            }
+        }
+        return submitted
+    }
+
+    private fun parseBusinessDate(source: String?): String? {
+        if (source.isNullOrBlank()) return null
+        val datePart = source.trim().substringBefore(' ')
+        val formats = listOf(
+            DateTimeFormatter.ofPattern("d/M/uuuu", Locale.ROOT),
+            DateTimeFormatter.ofPattern("d-M-uuuu", Locale.ROOT),
+            DateTimeFormatter.ISO_LOCAL_DATE
+        )
+        return formats.firstNotNullOfOrNull { formatter ->
+            runCatching { LocalDate.parse(datePart, formatter).toString() }.getOrNull()
+        }
+    }
+
 }
