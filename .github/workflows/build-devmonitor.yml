@@ -3,7 +3,7 @@ name: Build DevMonitor Android and Windows
 
 on:
   push:
-    branches: [main, master, trial/direct-google-account-lan-sync]
+    branches: [main, master, trial/direct-google-account-lan-sync, sms-checker-cancel-cooldown-v353]
     paths:
       - '**/*.zip'
       - '.github/workflows/build-devmonitor.yml'
@@ -329,6 +329,7 @@ jobs:
           retention-days: 7
 
       - name: Apply trial Android UI overlay
+        if: github.ref_name != 'sms-checker-cancel-cooldown-v353'
         shell: bash
         run: |
           set -euo pipefail
@@ -403,6 +404,7 @@ jobs:
           echo "Applied v343 SMS History and MOM Conversion, daily history totals, Drive diagnostics, bulk SMS device management, persistent last-checked device priority, operation-aware notifications, and Glo-first explicit SIM routing; Android v352."
 
       - name: Verify Android v352 preserves existing features and Glo SIM routing
+        if: github.ref_name != 'sms-checker-cancel-cooldown-v353'
         shell: bash
         run: |
           set -euo pipefail
@@ -534,6 +536,55 @@ jobs:
           path: DevMonitor-An-v352-4.7.0-TARGET-GLO-SIM-AUTO-SOURCE.zip
           if-no-files-found: error
           retention-days: 90
+
+      - name: Verify Android v353 cancellation cooldown source
+        if: github.ref_name == 'sms-checker-cancel-cooldown-v353'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          mains = list(Path("build-source").rglob("MainActivity.kt"))
+          builds = list(Path("build-source").rglob("app/build.gradle.kts"))
+          if len(mains) != 1 or len(builds) != 1:
+              raise SystemExit(
+                  f"Expected one MainActivity.kt and app/build.gradle.kts; "
+                  f"found {len(mains)} and {len(builds)}."
+              )
+          source = mains[0].read_text(encoding="utf-8")
+          gradle = builds[0].read_text(encoding="utf-8")
+
+          if not re.search(r'versionCode\\s*=\\s*353\\b', gradle):
+              raise SystemExit("Android ZIP must declare versionCode 353.")
+          if 'versionName = "4.7.0-TARGET-SMS-CHECKER-CANCEL-COOLDOWN-V353"' not in gradle:
+              raise SystemExit("Android ZIP versionName does not match v353.")
+
+          required = (
+              'sms_checker_cooldown_until',
+              'sms_checker_pending_codes',
+              'sms_checker_pending_retry',
+              'sms_checker_pending_tab',
+              'cooldownUntil = cancelledAt + 4L * 60L * 1000L',
+              'pendingCooldownCodes = requestedCodes',
+              'Your request is queued. SMS Checker will start automatically',
+              'Text("Cooldown"',
+              'pendingCooldownCodes.isNotEmpty() && !running',
+          )
+          missing = [item for item in required if item not in source]
+          if missing:
+              raise SystemExit("v353 cancellation cooldown implementation is incomplete: " + ", ".join(missing))
+
+          stop = re.search(r'fun stopRun\\(\\)\\s*\\{(.*?)(?=\\n\\s*OperationServiceCallbacks\\.onStopRequested)', source, re.S)
+          if not stop or not re.search(r'if \\(running\\)\\s*\\{.*?cooldownUntil = cancelledAt', stop.group(1), re.S):
+              raise SystemExit("The four-minute cooldown must begin only when Stop/Cancel is pressed during an active run.")
+
+          if 'OperationServiceCallbacks.onStopRequested = { stopRun() }' not in source or 'onClick = { stopRun() }' not in source:
+              raise SystemExit("The foreground Stop action and visible Cancel button must use the cancellation handler.")
+
+          print("Android v353 source verified: versionCode 353, cancellation-only four-minute cooldown, persisted queued request, live Cooldown display and automatic resume logic.")
+          PY
 
       - name: Generate automated What's New release notes
         shell: bash
