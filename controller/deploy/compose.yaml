@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: devmonitor_gateway
+      POSTGRES_USER: dm_migration_owner
+      POSTGRES_PASSWORD: ${CONTROLLER_MIGRATION_DB_PASSWORD:?Set CONTROLLER_MIGRATION_DB_PASSWORD in controller/deploy/.env}
+      CONTROLLER_API_DB_USER: dm_controller_api
+      CONTROLLER_API_DB_PASSWORD: ${CONTROLLER_API_DB_PASSWORD:?Set CONTROLLER_API_DB_PASSWORD in controller/deploy/.env}
+    volumes:
+      - gateway-postgres-data:/var/lib/postgresql/data
+      - ../postgres:/docker-entrypoint-initdb.d:ro
+      - ./init/999-create-api-role.sh:/docker-entrypoint-initdb.d/999-create-api-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dm_migration_owner -d devmonitor_gateway"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  controller:
+    build:
+      context: ../service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://dm_controller_api:${CONTROLLER_API_DB_PASSWORD:?Set CONTROLLER_API_DB_PASSWORD in controller/deploy/.env}@db:5432/devmonitor_gateway
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:?Set FIREBASE_PROJECT_ID in controller/deploy/.env}
+      DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-10}
+      REAPER_INTERVAL_SECONDS: ${REAPER_INTERVAL_SECONDS:-15}
+      QUEUE_SNAPSHOT_INTERVAL_SECONDS: ${QUEUE_SNAPSHOT_INTERVAL_SECONDS:-60}
+    ports:
+      - "127.0.0.1:${CONTROLLER_BIND_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  gateway-postgres-data:
