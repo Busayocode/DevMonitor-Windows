@@ -15,6 +15,12 @@ import android.os.IBinder
 import com.aziitech.devmonitor.gateway.worker.AndroidGatewayCredentialStore
 import com.aziitech.devmonitor.gateway.worker.AndroidGatewayLeaseTokenStore
 import com.aziitech.devmonitor.gateway.worker.GatewayAttemptState
+import com.aziitech.devmonitor.gateway.worker.Gateway3030InboxProcessor
+import com.aziitech.devmonitor.gateway.worker.GatewayDispatchRecoveryAdapter
+import com.aziitech.devmonitor.gateway.worker.GatewayRecoveryStatus
+import com.aziitech.devmonitor.gateway.worker.GatewayInboundSmsStore
+import com.aziitech.devmonitor.gateway.worker.GatewaySmsTransactionGate
+import java.time.Duration
 import com.aziitech.devmonitor.gateway.worker.GatewaySmsDispatchCoordinator
 import com.aziitech.devmonitor.gateway.worker.SqliteSmsChannelStateStore
 import kotlinx.coroutines.CancellationException
@@ -111,7 +117,7 @@ class GatewayForegroundService : Service() {
                         telephonyReady = readiness.telephonyReady,
                         networkReady = networkReady
                     )
-                    val callbackNote = reconcileDurableSendCallback(client)
+                    val callbackNote = processDurableReplyInbox(client)
                     saveState(STATE_RUNNING)
                     updateNotification(
                         "Controller heartbeat acknowledged (${heartbeat.healthState}). " +
@@ -132,6 +138,51 @@ class GatewayForegroundService : Service() {
     }
 
 
+    /**
+     * Restore controller/local attempt state before processing the durable inbox.
+     * This submits only a reply correlated to an existing AWAITING_REPLY attempt.
+     * It never claims work, sends SMS, retries, or advances the queue.
+     */
+    private suspend fun processDurableReplyInbox(
+        controller: GatewayWorkerControllerClient
+    ): String? {
+        val ledger = SqliteSmsChannelStateStore(applicationContext)
+        val leaseTokens = AndroidGatewayLeaseTokenStore(applicationContext)
+        val inbox = GatewayInboundSmsStore(applicationContext)
+        val gate = GatewaySmsTransactionGate(ledger, Duration.ZERO)
+        try {
+            val recovery = GatewayDispatchRecoveryAdapter().reconcile(
+                controller = controller,
+                ledger = ledger,
+                leaseTokens = leaseTokens,
+                gate = gate
+            )
+            return when (recovery.status) {
+                GatewayRecoveryStatus.RESUME_WAITING_FOR_REPLY -> {
+                    val processor = Gateway3030InboxProcessor(inbox, gate)
+                    val intake = processor.processUnassigned()
+                    val submitted = processor.submitAcceptedPending(
+                        controller = controller,
+                        ledger = ledger,
+                        leaseTokens = leaseTokens
+                    )
+                    when {
+                        submitted > 0 -> "Submitted " + submitted + " verified 3030 result(s). No post-reply wait; SMS dispatch remains disabled."
+                        intake.acceptedPendingController > 0 -> "Verified 3030 reply durably staged; guarded controller submission is pending."
+                        intake.unassigned > 0 || intake.duplicates > 0 -> "3030 inbox reviewed: " + intake.unassigned + " unassigned, " + intake.duplicates + " duplicate."
+                        else -> "Recovered the exact active attempt and resumed 3030 reply intake. No resend."
+                    }
+                }
+                GatewayRecoveryStatus.NO_ACTIVE_WORK -> "No active controller attempt. Automatic claim/send remains disabled."
+                GatewayRecoveryStatus.ELIGIBLE_LEASED_WORK -> "Controller lease found, but automatic claim/send remains disabled."
+                GatewayRecoveryStatus.WAITING_FOR_DRAIN_WINDOW -> "Waiting for the configured channel interval."
+                GatewayRecoveryStatus.QUARANTINED -> "Gateway channel quarantined: " + recovery.reason
+            }
+        } finally {
+            inbox.close()
+            ledger.close()
+        }
+    }
     /**
      * Reconcile only an already-persisted Android SMS_SENT callback.
      *
