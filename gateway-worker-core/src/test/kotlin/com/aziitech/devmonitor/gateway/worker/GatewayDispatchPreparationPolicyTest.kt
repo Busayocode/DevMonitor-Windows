@@ -83,12 +83,12 @@ class GatewayDispatchPreparationPolicyTest {
         )
     }
 
-    @Test fun cancellationOrDrainCooldownBlocksUntilDeadline() {
+    @Test fun drainIntervalBlocksUntilItsDeadline() {
         val until = now.plusSeconds(240)
         val draining = SmsChannelSnapshot(SmsChannelState.DRAINING, drainUntil = until)
         assertBlocked(
             base.copy(channel = draining),
-            "The channel cooldown has not elapsed."
+            "The channel drain interval has not elapsed."
         )
         assertEquals(
             GatewayDispatchPreparation.ReadyForExplicitDispatchReview,
