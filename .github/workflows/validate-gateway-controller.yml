@@ -85,6 +85,7 @@ jobs:
           )
           assert spec["openapi"].startswith("3.1.")
           assert "/v1/client/gateways" in spec["paths"]
+          assert "/v1/gateway/jobs/{job_id}/cancel" in spec["paths"]
           assert "get" in spec["paths"]["/v1/client/gateways"]
           assert "post" in spec["paths"]["/v1/client/gateways"]
           assert "UserBearerAuth" in spec["components"]["securitySchemes"]
