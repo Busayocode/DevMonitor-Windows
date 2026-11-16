@@ -253,6 +253,76 @@ class GatewayWorkerControllerClient(
     }
 
 
+    /** Cancel only the exact controller lease. The server response is persisted locally before this returns. */
+    suspend fun cancelAttempt(
+        jobId: String,
+        attemptId: String,
+        reason: String,
+        ledger: SqliteSmsChannelStateStore,
+        leaseTokens: AndroidGatewayLeaseTokenStore,
+        transactionGate: com.aziitech.devmonitor.gateway.worker.GatewaySmsTransactionGate
+    ): GatewayCancellationResult {
+        requireUuid(jobId)
+        requireUuid(attemptId)
+        require(reason.isNotBlank() && reason.length <= 240)
+        val token = requireLeaseToken(leaseTokens, attemptId)
+        val response = post(jobPath(jobId, "cancel"), JSONObject()
+            .put("attempt_id", attemptId)
+            .put("lease_token", token)
+            .put("reason", reason))
+        val returnedJobId = response.getString("job_id").also(::requireUuid)
+        val returnedAttemptId = response.getString("attempt_id").also(::requireUuid)
+        check(returnedJobId == jobId && returnedAttemptId == attemptId) {
+            "Controller cancellation response did not match the requested attempt"
+        }
+        val outcome = response.getString("outcome")
+        val cooldownUntil = if (response.isNull("cooldown_until") || !response.has("cooldown_until")) {
+            null
+        } else {
+            Instant.parse(response.getString("cooldown_until"))
+        }
+        val cooldownSeconds = response.optInt("cooldown_seconds", 0)
+        if (outcome == "CANCELLED_AFTER_SEND") {
+            check(cooldownUntil != null && cooldownSeconds == 240) {
+                "Controller returned an invalid cancellation cooldown"
+            }
+        }
+
+        // Persist the server's exact deadline before reporting cancellation success.
+        transactionGate.applyControllerCancellation(attemptId, outcome, cooldownUntil)
+        withContext(Dispatchers.IO) {
+            val (job, attempt) = requireLocalPair(ledger, jobId, attemptId)
+            when (outcome) {
+                "CANCELLED_BEFORE_SEND", "CANCELLED_AFTER_SEND" -> {
+                    ledger.saveJobAndAttempt(
+                        job.copy(state = GatewayJobState.CANCELLED, updatedAt = Instant.now().toString()),
+                        attempt.copy(
+                            state = GatewayAttemptState.REJECTED,
+                            completedAt = Instant.now().toString(),
+                            errorCode = outcome,
+                            errorMessage = reason.take(160),
+                            updatedAt = Instant.now().toString()
+                        )
+                    )
+                    leaseTokens.remove(attemptId)
+                }
+                "BLOCKED_QUARANTINED" -> {
+                    ledger.saveJobAndAttempt(
+                        job.copy(state = GatewayJobState.AMBIGUOUS, updatedAt = Instant.now().toString()),
+                        attempt.copy(
+                            state = GatewayAttemptState.AMBIGUOUS,
+                            errorCode = outcome,
+                            errorMessage = reason.take(160),
+                            updatedAt = Instant.now().toString()
+                        )
+                    )
+                }
+                else -> throw IllegalStateException("Controller returned an unknown cancellation outcome")
+            }
+        }
+        return GatewayCancellationResult(outcome, cooldownUntil, cooldownSeconds)
+    }
+
     suspend fun submitResult(
         jobId: String,
         attemptId: String,
