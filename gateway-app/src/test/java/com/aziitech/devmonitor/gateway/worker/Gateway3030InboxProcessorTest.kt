@@ -20,6 +20,7 @@ import java.time.Instant
 class Gateway3030InboxProcessorTest {
     private lateinit var context: Context
     private lateinit var inbox: GatewayInboundSmsStore
+    private lateinit var ledger: SqliteSmsChannelStateStore
     private lateinit var gate: GatewaySmsTransactionGate
 
     @Before
@@ -28,8 +29,9 @@ class Gateway3030InboxProcessorTest {
         context.deleteDatabase("devmonitor_gateway_inbox.db")
         context.deleteDatabase("devmonitor_gateway_worker.db")
         inbox = GatewayInboundSmsStore(context)
+        ledger = SqliteSmsChannelStateStore(context)
         gate = GatewaySmsTransactionGate(
-            SqliteSmsChannelStateStore(context),
+            ledger,
             Duration.ofMinutes(4)
         )
     }
@@ -37,7 +39,7 @@ class Gateway3030InboxProcessorTest {
     @After
     fun tearDown() {
         inbox.close()
-        (gateStore()).close()
+        ledger.close()
         context.deleteDatabase("devmonitor_gateway_inbox.db")
         context.deleteDatabase("devmonitor_gateway_worker.db")
     }
@@ -86,8 +88,6 @@ class Gateway3030InboxProcessorTest {
         assertTrue(inbox.loadPendingController().isEmpty())
         assertEquals("SUBMISSION_UNCERTAIN", inbox.loadStateForTest(row.fingerprint))
     }
-
-    private fun gateStore(): SqliteSmsChannelStateStore = SqliteSmsChannelStateStore(context)
 
     private fun GatewayInboundSmsStore.loadStateForTest(fingerprint: String): String {
         val db = context.openOrCreateDatabase("devmonitor_gateway_inbox.db", Context.MODE_PRIVATE, null)
