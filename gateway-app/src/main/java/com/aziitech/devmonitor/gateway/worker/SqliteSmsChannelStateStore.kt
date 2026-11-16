@@ -297,6 +297,7 @@ class SqliteSmsChannelStateStore(context: Context) : SmsChannelStateStore {
         val json = JSONObject()
             .put("state", snapshot.state.name)
             .put("drainUntil", snapshot.drainUntil?.toString() ?: JSONObject.NULL)
+            .put("cancellationCooldownUntil", snapshot.cancellationCooldownUntil?.toString() ?: JSONObject.NULL)
             .put("lastResolutionNote", snapshot.lastResolutionNote ?: JSONObject.NULL)
             .put("seenMessageFingerprints", JSONArray(snapshot.seenMessageFingerprints.toList()))
 
@@ -341,6 +342,7 @@ class SqliteSmsChannelStateStore(context: Context) : SmsChannelStateStore {
             state = state,
             transaction = transaction,
             drainUntil = json.optNullableString("drainUntil")?.let(Instant::parse),
+            cancellationCooldownUntil = json.optNullableString("cancellationCooldownUntil")?.let(Instant::parse),
             seenMessageFingerprints = fingerprints,
             lastResolutionNote = json.optNullableString("lastResolutionNote")
         )
