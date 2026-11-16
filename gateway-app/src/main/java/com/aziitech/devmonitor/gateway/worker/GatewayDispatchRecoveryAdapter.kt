@@ -38,13 +38,14 @@ class GatewayDispatchRecoveryAdapter {
 
         if (server == null) {
             val channel = ledger.load()
-            if (unresolved.isEmpty() && channel.state == SmsChannelState.IDLE && channel.transaction == null) {
+            val effectiveState = gate.state(now)
+            if (unresolved.isEmpty() && effectiveState == SmsChannelState.IDLE) {
                 return GatewayRecoveryResult(
                     GatewayRecoveryStatus.NO_ACTIVE_WORK,
-                    "Controller, local ledger and SMS channel report no unresolved dispatch."
+                    "Controller, local ledger and elapsed channel interval report no unresolved dispatch."
                 )
             }
-            if (unresolved.isEmpty() && channel.state == SmsChannelState.DRAINING &&
+            if (unresolved.isEmpty() && effectiveState == SmsChannelState.DRAINING &&
                 channel.drainUntil?.let { now.isBefore(it) } == true
             ) {
                 return GatewayRecoveryResult(
