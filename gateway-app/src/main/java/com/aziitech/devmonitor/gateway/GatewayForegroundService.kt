@@ -21,6 +21,7 @@ import com.aziitech.devmonitor.gateway.worker.GatewayRecoveryStatus
 import com.aziitech.devmonitor.gateway.worker.GatewayInboundSmsStore
 import com.aziitech.devmonitor.gateway.worker.GatewaySmsTransactionGate
 import java.time.Duration
+import java.time.Instant
 import com.aziitech.devmonitor.gateway.worker.GatewaySmsDispatchCoordinator
 import com.aziitech.devmonitor.gateway.worker.SqliteSmsChannelStateStore
 import kotlinx.coroutines.CancellationException
@@ -178,7 +179,7 @@ class GatewayForegroundService : Service() {
                 GatewayRecoveryStatus.NO_ACTIVE_WORK -> "No active controller attempt. Automatic claim/send remains disabled."
                 GatewayRecoveryStatus.ELIGIBLE_LEASED_WORK -> "Controller lease found, but automatic claim/send remains disabled."
                 GatewayRecoveryStatus.WAITING_FOR_DRAIN_WINDOW -> "Waiting for the configured channel interval."
-                GatewayRecoveryStatus.WAITING_FOR_CANCELLATION_COOLDOWN -> "Cooldown active: waiting for the four-minute cancellation safety window."
+                GatewayRecoveryStatus.WAITING_FOR_CANCELLATION_COOLDOWN -> cooldownStatusText(recovery.cooldownUntil)
                 GatewayRecoveryStatus.QUARANTINED -> "Gateway channel quarantined: " + recovery.reason
             }
         } finally {
@@ -217,7 +218,7 @@ class GatewayForegroundService : Service() {
                     GatewayRecoveryStatus.WAITING_FOR_DRAIN_WINDOW ->
                         "The SMS channel is not idle. No new job was claimed."
                     GatewayRecoveryStatus.WAITING_FOR_CANCELLATION_COOLDOWN ->
-                        "Cooldown active: no new job will be claimed until the four-minute cancellation window expires."
+                        cooldownStatusText(recovery.cooldownUntil)
                     GatewayRecoveryStatus.QUARANTINED ->
                         "Gateway channel quarantined: " + recovery.reason
                     GatewayRecoveryStatus.NO_ACTIVE_WORK -> null
@@ -286,6 +287,17 @@ class GatewayForegroundService : Service() {
         } finally {
             ledger.close()
         }
+    }
+
+
+    private fun cooldownStatusText(deadline: Instant?): String {
+        val remainingSeconds = deadline?.let {
+            Duration.between(Instant.now(), it).seconds.coerceAtLeast(0)
+        } ?: 0L
+        val minutes = remainingSeconds / 60
+        val seconds = remainingSeconds % 60
+        return "Cooldown · %d:%02d remaining. No new 3030 query will start until it expires."
+            .format(minutes, seconds)
     }
 
     private fun hasValidatedNetwork(): Boolean {
