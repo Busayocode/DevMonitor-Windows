@@ -431,3 +431,17 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - [ ] Run controlled physical-device tests using the selected Globacom SIM and a redacted real 3030 response.
 
 **Current operational boundary:** the correlation, durable staging and guarded submission APIs are implemented and CI-verified, but they are not yet called by the foreground service. The service remains heartbeat-only; live SMS dispatch and automatic queue execution remain disabled. A successful CI build is not evidence of a real SIM/3030 transaction.
+
+
+## 29. Gateway live phone-readiness heartbeat — 16 Nov 2026
+
+- [x] Added `GatewayPhoneReadiness` to inspect the actual Android `SEND_SMS`, `RECEIVE_SMS` and `READ_PHONE_STATE` permissions.
+- [x] Reuses the exact SIM-picker preference namespace/key (`devmonitor_gateway_sim` / `selected_subscription_id`) rather than selecting a different SIM in the service.
+- [x] Validates that the chosen subscription is still active and its subscription-specific SIM state is `SIM_STATE_READY`.
+- [x] Gateway heartbeat now reports the actual SMS-permission and selected-SIM readiness flags instead of hardcoded false values.
+- [x] Foreground notification reports the permission/SIM readiness summary. It continues to state that queue dispatch and SMS sending remain disabled.
+- [x] Added Robolectric tests for missing permissions, permissions granted without a selected SIM, and a selected but inactive SIM.
+- [ ] CI validation for this change is pending.
+- [ ] Physical-device validation across single-SIM and multi-SIM phones, including one and multiple Globacom SIMs, remains pending.
+
+**Safety boundary:** this is readiness reporting only. It does not auto-select a SIM, claim controller work, transmit SMS, or wire the 3030 result-submission API into the foreground worker. Restart recovery remains reconciliation-only and must be connected to a safely configured transaction gate before any queue execution is enabled. The post-reply quiet period must not be guessed from the separate four-minute cancellation cooldown.
