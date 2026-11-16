@@ -16,7 +16,8 @@ data class GatewayRecoveryResult(
     val status: GatewayRecoveryStatus,
     val reason: String,
     val jobId: String? = null,
-    val attemptId: String? = null
+    val attemptId: String? = null,
+    val cooldownUntil: Instant? = null
 )
 
 /**
@@ -51,7 +52,8 @@ class GatewayDispatchRecoveryAdapter {
             ) {
                 return GatewayRecoveryResult(
                     GatewayRecoveryStatus.WAITING_FOR_CANCELLATION_COOLDOWN,
-                    "Cancellation cooldown is active; wait until its persisted deadline before another 3030 query."
+                    "Cancellation cooldown is active; wait until its persisted deadline before another 3030 query.",
+                    cooldownUntil = channel.cancellationCooldownUntil
                 )
             }
             if (unresolved.isEmpty() && effectiveState == SmsChannelState.DRAINING &&
@@ -136,7 +138,8 @@ class GatewayDispatchRecoveryAdapter {
                     GatewayRecoveryStatus.WAITING_FOR_CANCELLATION_COOLDOWN,
                     "Cancellation cooldown is active; wait until its persisted deadline before dispatch.",
                     server.jobId,
-                    server.attemptId
+                    server.attemptId,
+                    channel.cancellationCooldownUntil
                 )
                 SmsChannelState.DRAINING -> return GatewayRecoveryResult(
                     GatewayRecoveryStatus.WAITING_FOR_DRAIN_WINDOW,
