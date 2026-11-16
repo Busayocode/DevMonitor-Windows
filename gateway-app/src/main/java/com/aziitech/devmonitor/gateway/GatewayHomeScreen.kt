@@ -99,6 +99,7 @@ fun GatewayHomeScreen(
     onTestController: () -> Unit,
     onRegisterGateway: () -> Unit,
     workerState: String,
+    workerMessage: String,
     batteryOptimizationIgnored: Boolean,
     smsPermissionsGranted: Boolean,
     phoneStatePermissionGranted: Boolean,
@@ -111,7 +112,8 @@ fun GatewayHomeScreen(
     onRequestSmsReadiness: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onStartWorker: () -> Unit,
-    onStopWorker: () -> Unit
+    onStopWorker: () -> Unit,
+    onCancelActiveJob: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val navLabels = remember { listOf("Overview", "Queue", "Gateway", "Account") }
@@ -289,7 +291,7 @@ fun GatewayHomeScreen(
                                 onVerifyToken, onTestController, onRegisterGateway
                             )
                             1 -> GatewayQueueContent()
-                            2 -> GatewayPhoneContent(workerState, gatewayId, controllerUrl, batteryOptimizationIgnored, smsPermissionsGranted, phoneStatePermissionGranted, activeSimCount, readySimCount, availableGatewaySims, selectedSimSubscriptionId, onSelectGatewaySim, onAutoSelectGlo, onRequestSmsReadiness, onOpenBatterySettings, onStartWorker, onStopWorker)
+                            2 -> GatewayPhoneContent(workerState, workerMessage, gatewayId, controllerUrl, batteryOptimizationIgnored, smsPermissionsGranted, phoneStatePermissionGranted, activeSimCount, readySimCount, availableGatewaySims, selectedSimSubscriptionId, onSelectGatewaySim, onAutoSelectGlo, onRequestSmsReadiness, onOpenBatterySettings, onStartWorker, onStopWorker, onCancelActiveJob)
                             else -> GatewayAccountContent(signedIn, gatewayId, busy, onVerifyToken)
                         }
                         Spacer(Modifier.height(8.dp))
@@ -437,6 +439,7 @@ private fun GatewayQueueContent() {
 @Composable
 private fun GatewayPhoneContent(
     workerState: String,
+    workerMessage: String,
     gatewayId: String?,
     controllerUrl: String,
     batteryOptimizationIgnored: Boolean,
@@ -451,7 +454,8 @@ private fun GatewayPhoneContent(
     onRequestSmsReadiness: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onStartWorker: () -> Unit,
-    onStopWorker: () -> Unit
+    onStopWorker: () -> Unit,
+    onCancelActiveJob: () -> Unit
 ) {
     val active = workerState == "RUNNING" || workerState == "PAUSED" || workerState == "STARTING"
     AuroraSectionHeader("Phone availability", "Gateway status", "A user-controlled foreground service keeps the controller heartbeat visible.")
@@ -467,7 +471,7 @@ private fun GatewayPhoneContent(
         )
         Text("Service state: $workerState", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
-            "This stage sends controller health heartbeats only. SMS permission, SIM readiness, job claiming, SMS sending and SMS receiving are deliberately disabled.",
+            "The service reports readiness, can reserve one controller job and safely process a correlated 3030 reply. Outbound SMS transmission remains disabled.",
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         DevMonitorButton(
@@ -480,6 +484,16 @@ private fun GatewayPhoneContent(
             modifier = Modifier.fillMaxWidth(),
             enabled = active
         ) { Text("Stop Gateway service") }
+        DevMonitorOutlinedButton(
+            onClick = onCancelActiveJob,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = active && gatewayId != null && controllerUrl.startsWith("https://", ignoreCase = true)
+        ) { Text("Cancel active job") }
+        Text(
+            workerMessage,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
         Text(
             "Pause, resume and stop controls are also available in the persistent notification while the service is active.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -548,7 +562,7 @@ private fun GatewayPhoneContent(
             Text(if (smsPermissionsGranted && phoneStatePermissionGranted) "Refresh SMS and SIM readiness" else "Review SMS permissions")
         }
         Text(
-            "Permissions are requested only after you tap this button. This step does not send or receive messages. Actual SMS transport, sender verification and transaction correlation are still disabled. Controller heartbeat readiness remains false until that transport is implemented and tested.",
+            "Permissions are requested only after you tap this button. This step does not send or receive messages. Outbound SMS transmission is not enabled until the controller deployment and physical SIM/3030 validation are complete.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall
         )
