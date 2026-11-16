@@ -576,8 +576,10 @@ jobs:
           if missing:
               raise SystemExit("v353 cancellation cooldown implementation is incomplete: " + ", ".join(missing))
 
-          stop = re.search(r'fun stopRun\(\)\s*\{(.*?)(?=\n\s*OperationServiceCallbacks\\.onStopRequested)', source, re.S)
-          if not stop or not re.search(r'if \(running\)\s*\{.*?cooldownUntil = cancelledAt', stop.group(1), re.S):
+          stop_start = source.find("fun stopRun() {")
+          stop_end = source.find("OperationServiceCallbacks.onStopRequested", stop_start)
+          stop_body = source[stop_start:stop_end] if stop_start >= 0 and stop_end > stop_start else ""
+          if not re.search(r'if \\(running\\)\\s*\\{.*?cooldownUntil = cancelledAt', stop_body, re.S):
               raise SystemExit("The four-minute cooldown must begin only when Stop/Cancel is pressed during an active run.")
 
           if 'OperationServiceCallbacks.onStopRequested = { stopRun() }' not in source or 'onClick = { stopRun() }' not in source:
