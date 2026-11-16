@@ -2,6 +2,8 @@ package com.aziitech.devmonitor.gateway.worker
 
 import android.app.Activity
 import android.content.Context
+import java.time.Duration
+import java.time.Instant
 import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -44,6 +46,29 @@ class SqliteSmsChannelStateStoreTest {
         assertEquals(job, store!!.loadJob(job.jobId))
         assertEquals(listOf(attempt), store!!.loadAttempts(job.jobId))
         assertEquals(1, store!!.loadUnresolvedDispatches().size)
+    }
+
+
+    @Test
+    fun cancellationCooldownDeadlineSurvivesSqliteStoreRecreation() {
+        val now = Instant.parse("2026-11-16T10:00:00Z")
+        val gate = GatewaySmsTransactionGate(store!!, Duration.ZERO)
+        gate.begin(
+            "tx-cancel", "job-cancel", "attempt-cancel", "GLO-GD-273M",
+            "standard", now, Duration.ofMinutes(2)
+        )
+        assertTrue(gate.recordCancellationAfterSubmission(
+            "attempt-cancel", now, androidSubmissionSucceeded = true
+        ))
+        store!!.close()
+
+        store = SqliteSmsChannelStateStore(context)
+        val restoredGate = GatewaySmsTransactionGate(store!!, Duration.ZERO)
+        assertEquals(SmsChannelState.CANCELLATION_COOLDOWN, restoredGate.state(now.plusSeconds(239)))
+        assertEquals(SmsChannelState.IDLE, restoredGate.state(now.plusSeconds(240)))
+        assertFalse(restoredGate.recordCancellationAfterSubmission(
+            "attempt-cancel", now.plusSeconds(240), androidSubmissionSucceeded = true
+        ))
     }
 
     @Test
