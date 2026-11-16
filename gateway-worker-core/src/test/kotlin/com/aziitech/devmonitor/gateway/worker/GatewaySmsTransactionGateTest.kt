@@ -95,6 +95,27 @@ class GatewaySmsTransactionGateTest {
         assertEquals(SmsChannelState.IDLE, restartedProcess.state(t0.plusSeconds(240)))
     }
 
+    @Test fun controllerCancellationUsesExactServerDeadlineRatherThanLocalClock() {
+        val store = InMemorySmsChannelStateStore()
+        val g = GatewaySmsTransactionGate(store, Duration.ZERO)
+        begin(g)
+        val serverDeadline = Instant.parse("2026-11-15T10:07:31Z")
+        g.applyControllerCancellation("attempt-tx-1", "CANCELLED_AFTER_SEND", serverDeadline)
+        assertEquals(SmsChannelState.CANCELLATION_COOLDOWN, g.state(serverDeadline.minusSeconds(1)))
+        assertThrows(IllegalStateException::class.java) {
+            g.begin("tx-2", "job-2", "attempt-2", "GLO-GD-342F", "standard",
+                serverDeadline.minusSeconds(1), Duration.ofSeconds(120))
+        }
+        assertEquals(SmsChannelState.IDLE, g.state(serverDeadline))
+    }
+
+    @Test fun controllerUncertainCancellationQuarantinesTheChannel() {
+        val g = gate()
+        begin(g)
+        g.applyControllerCancellation("attempt-tx-1", "BLOCKED_QUARANTINED", null)
+        assertEquals(SmsChannelState.QUARANTINED, g.state(t0.plusSeconds(1)))
+    }
+
     @Test fun timeoutQuarantinesUntilExplicitOperatorResolution() {
         val g = gate()
         begin(g)
