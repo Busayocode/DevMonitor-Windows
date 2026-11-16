@@ -33,7 +33,7 @@ BEGIN
         TRUE,TRUE,TRUE,now()
     );
     INSERT INTO dm_check_batches(id,tenant_id,requested_by_user_id,client_idempotency_key,app_edition,total_jobs,request_fingerprint)
-    VALUES (b,t,u,'v014-'||b,'GATEWAY',3,digest(convert_to('v014-'||b::TEXT,'UTF8'),'sha256'));
+    VALUES (b,t,u,'v014-'||b,'GATEWAY',4,digest(convert_to('v014-'||b::TEXT,'UTF8'),'sha256'));
 
     -- A lease cancelled before any send evidence is safe to close immediately.
     INSERT INTO dm_check_jobs(id,batch_id,tenant_id,requested_by_user_id,canonical_device_id,query_profile,state)
