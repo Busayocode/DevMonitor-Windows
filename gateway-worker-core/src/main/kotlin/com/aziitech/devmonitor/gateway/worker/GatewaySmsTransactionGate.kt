@@ -121,6 +121,40 @@ class GatewaySmsTransactionGate(
         return true
     }
 
+    /** Apply the controller's authoritative cancellation result to the durable local gate. */
+    @Synchronized
+    fun applyControllerCancellation(
+        attemptId: String,
+        outcome: String,
+        cooldownUntil: Instant?
+    ) {
+        require(attemptId.isNotBlank())
+        when (outcome) {
+            "CANCELLED_BEFORE_SEND" -> Unit
+            "CANCELLED_AFTER_SEND" -> {
+                val deadline = requireNotNull(cooldownUntil) {
+                    "Controller omitted the cancellation cooldown deadline"
+                }
+                val current = store.load()
+                val active = current.transaction
+                check(active == null || active.attemptId == attemptId) {
+                    "A different local SMS attempt is active; cancellation result cannot be applied"
+                }
+                store.save(current.copy(
+                    state = SmsChannelState.CANCELLATION_COOLDOWN,
+                    transaction = null,
+                    drainUntil = null,
+                    cancellationCooldownUntil = deadline,
+                    lastResolutionNote = "Controller confirmed cancellation after SMS submission; four-minute cooldown."
+                ))
+            }
+            "BLOCKED_QUARANTINED" -> quarantine(
+                "Controller blocked cancellation because SMS transmission state is uncertain"
+            )
+            else -> throw IllegalStateException("Unknown controller cancellation outcome")
+        }
+    }
+
     /** Call only for a newly observed SMS from the verified 3030 sender. */
     @Synchronized
     fun on3030Message(
