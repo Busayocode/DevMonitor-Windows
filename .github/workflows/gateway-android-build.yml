@@ -103,7 +103,8 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon \
             :gateway-auth-android:testDebugUnitTest \
-            :gateway-worker-core:test \
+            :gateway-worker-core:test \\
+            :gateway-app:testDebugUnitTest \
             :gateway-auth-android:assembleDebug \
             :gateway-app:assembleDebug
 
