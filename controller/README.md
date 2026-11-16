@@ -27,18 +27,11 @@ The controller database must be separate from the app's existing Firebase/Google
 
 ## Migration order
 
-Apply to a fresh, dedicated PostgreSQL database in this exact order:
+Apply every migration in numeric filename order to a fresh, dedicated PostgreSQL database:
 
-1. `V001__gateway_controller.sql`
-2. `V002__gateway_controller_hardening.sql`
-3. `V003__claim_locking_and_ambiguous_resolution.sql`
-4. `V004__profile_specific_reply_timeouts.sql`
-5. `V005__operator_authorization.sql`
-6. `V006__batch_integrity_and_gateway_revocation.sql`
-7. `V007__atomic_attempt_transitions.sql`
-8. `V008__requester_fair_scheduling.sql`
+- V001 through V014 under `controller/postgres/`
 
-The migrations require PostgreSQL with the `pgcrypto` extension available. Do not apply them to a production database until they have passed integration tests on the selected PostgreSQL version.
+The migrations require PostgreSQL 16 and the `pgcrypto` extension. The current CI workflow applies V001–V014 and runs the SQL smoke, cache/history isolation, concurrent claim and cancellation/cooldown integration suites. Do not apply them to a production database until backup, restore and migration procedures have been tested on the selected host.
 
 ## Security boundary
 
@@ -109,3 +102,10 @@ Do not use the older V001–V008 list in this README as the current complete mig
 Migration V014 adds an authenticated exact-attempt Gateway cancellation operation and a durable server-side four-minute claim barrier. A pre-send LEASED attempt can be closed immediately only when no send-start/SMS_SENT evidence exists. An AWAITING_REPLY attempt can be closed only when the server has the exact successful SMS submission timestamp; the controller records a four-minute deadline and blocks subsequent claims until it expires. SENDING or AMBIGUOUS attempts are not released and cause the Gateway to be quarantined. Cancellation retries return the original recorded outcome/deadline.
 
 The phone worker must still be wired to `POST /v1/gateway/jobs/{job_id}/cancel`; this backend change does not enable SMS sending or create a live Cancel button. CI includes a PostgreSQL integration test for pre-send cancellation, post-send cooldown, idempotent retry and claim blocking. The service remains source-only until a dedicated PostgreSQL database and HTTPS hosting are provisioned.
+
+
+## Deployment starter
+
+A portable local/private Docker Compose deployment starter is maintained in `controller/deploy/`. It uses PostgreSQL 16, applies V001–V014 on first initialization, separates the migration-owner account from the non-superuser API account, and binds the API to loopback only. Follow `controller/deploy/README.md`.
+
+This does not select or provision a cloud host. Production still requires an approved host, HTTPS termination, managed secrets, backup/restore, monitoring, rate limits and operational security review. The Gateway Android cancellation client is wired in its separate development branch, but no live controller URL has been provisioned and outbound SMS dispatch remains disabled.
