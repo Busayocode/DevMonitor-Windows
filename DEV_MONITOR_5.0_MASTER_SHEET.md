@@ -414,3 +414,20 @@ Never describe the current Gateway APK as the completed Gateway 5.0 product. It 
 - [ ] Expand tests to restart recovery reconciliation and channel snapshot restoration before enabling any claim/send loop.
 
 **Next implementation slice:** after these persistence tests pass, connect the restart-recovery adapter and dispatch coordinator to a worker lifecycle in a controlled, user-started foreground service. Keep the service heartbeat-only until controller claim/recovery, SIM readiness, transaction restore, reply processing and result submission are all wired and tested. Do not enable unattended SMS dispatch or select production response/drain timing from test fixtures.
+
+
+## 28. 3030 reply correlation and guarded controller result pipeline — 16 Nov 2026
+
+- [x] Extended the private 3030 inbox schema to retain the correlated controller job ID, attempt ID and canonical parsed payload. Added SQLite v3 migration for existing installs.
+- [x] Valid 3030 replies are staged only after the single-active-transaction gate accepts them. A failed durable stage quarantines the channel rather than treating the reply as accepted.
+- [x] Added an explicit processor API to validate a staged response against its original body and matching durable `AWAITING_REPLY` attempt before constructing the controller result payload.
+- [x] Added controller submission of all parsed report metrics with business date, send/check timestamp, received timestamp and parser version.
+- [x] Added a write-ahead `SUBMISSION_IN_PROGRESS` state before the network request. If the process dies during submission, the row is not automatically replayed; it remains an operator-reconciliation case.
+- [x] HTTP/transport uncertainty, missing attempt identity, changed payload or attempt-state mismatch is marked `SUBMISSION_UNCERTAIN` and quarantines the channel. No automatic duplicate result POST is attempted.
+- [x] Added Robolectric tests for exact attempt correlation, durable inbox staging, duplicate broadcast suppression and uncertain-submission non-replay.
+- [x] Gateway workflow #156 (`43835984615`) passed on commit `4b5c67af74cfac2ee394d465633121f8e49c143e`; Android unit tests/build and source ZIP packaging both succeeded.
+- [ ] Wire inbox processing and guarded result submission into the foreground worker only after durable gate restoration and an approved production response/drain timing configuration.
+- [ ] Add controller-side idempotency/reconciliation for `SUBMISSION_IN_PROGRESS` rows before any automatic recovery from an interrupted result POST.
+- [ ] Run controlled physical-device tests using the selected Globacom SIM and a redacted real 3030 response.
+
+**Current operational boundary:** the correlation, durable staging and guarded submission APIs are implemented and CI-verified, but they are not yet called by the foreground service. The service remains heartbeat-only; live SMS dispatch and automatic queue execution remain disabled. A successful CI build is not evidence of a real SIM/3030 transaction.
