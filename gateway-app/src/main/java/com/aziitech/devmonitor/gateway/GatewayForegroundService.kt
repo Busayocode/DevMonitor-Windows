@@ -117,12 +117,13 @@ class GatewayForegroundService : Service() {
                         telephonyReady = readiness.telephonyReady,
                         networkReady = networkReady
                     )
-                    val callbackNote = processDurableReplyInbox(client)
+                    val replyNote = processDurableReplyInbox(client)
+                    val claimNote = claimControllerWorkIfIdle(client, readiness, networkReady)
                     saveState(STATE_RUNNING)
                     updateNotification(
                         "Controller heartbeat acknowledged (${heartbeat.healthState}). " +
                             readiness.summary + ". " +
-                            (callbackNote ?: "SMS queue dispatch and sending remain disabled.")
+                            (claimNote ?: replyNote ?: "No active work. SMS sending remains disabled.")
                     )
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -183,6 +184,59 @@ class GatewayForegroundService : Service() {
             ledger.close()
         }
     }
+    /**
+     * Claim at most one controller-authorised job after a fresh recovery check.
+     * This persists the lease and attempt locally but deliberately does not
+     * transition to SENDING or invoke GatewaySmsDispatchCoordinator.
+     */
+    private suspend fun claimControllerWorkIfIdle(
+        controller: GatewayWorkerControllerClient,
+        readiness: GatewayPhoneReadiness.Result,
+        networkReady: Boolean
+    ): String? {
+        if (!readiness.smsPermissionReady || !readiness.telephonyReady || !networkReady) {
+            return "Job claim paused until SMS permissions, selected SIM readiness and validated network are ready."
+        }
+
+        val stored = runCatching { credentials.load() }.getOrNull()
+            ?: return "Gateway identity unavailable; no job was claimed."
+        val ledger = SqliteSmsChannelStateStore(applicationContext)
+        val leaseTokens = AndroidGatewayLeaseTokenStore(applicationContext)
+        val gate = GatewaySmsTransactionGate(ledger, Duration.ZERO)
+        try {
+            val recovery = GatewayDispatchRecoveryAdapter().reconcile(
+                controller = controller,
+                ledger = ledger,
+                leaseTokens = leaseTokens,
+                gate = gate
+            )
+            if (recovery.status != GatewayRecoveryStatus.NO_ACTIVE_WORK) {
+                return when (recovery.status) {
+                    GatewayRecoveryStatus.ELIGIBLE_LEASED_WORK ->
+                        "One controller lease is already persisted. Dispatch remains disabled."
+                    GatewayRecoveryStatus.RESUME_WAITING_FOR_REPLY ->
+                        "An existing attempt is waiting for its 3030 reply. No new job was claimed."
+                    GatewayRecoveryStatus.WAITING_FOR_DRAIN_WINDOW ->
+                        "The SMS channel is not idle. No new job was claimed."
+                    GatewayRecoveryStatus.QUARANTINED ->
+                        "Gateway channel quarantined: " + recovery.reason
+                    GatewayRecoveryStatus.NO_ACTIVE_WORK -> null
+                }
+            }
+
+            val claimed = controller.claimAndPersist(
+                gatewayId = stored.gatewayId,
+                ledger = ledger,
+                leaseTokens = leaseTokens
+            ) ?: return "No queued job is currently available. SMS sending remains disabled."
+
+            return "Claimed and securely persisted one job (" + claimed.jobId +
+                "). It is not sent; waiting for the next guarded dispatch stage."
+        } finally {
+            ledger.close()
+        }
+    }
+
     /**
      * Reconcile only an already-persisted Android SMS_SENT callback.
      *
