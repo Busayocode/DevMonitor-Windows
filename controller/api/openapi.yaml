@@ -380,6 +380,40 @@ paths:
       responses:
         "200": { description: Definitive send failure recorded. }
         "409": { description: Attempt is not in a valid pre-transmission state. }
+  /v1/gateway/jobs/{job_id}/cancel:
+    post:
+      tags: [Gateway worker]
+      summary: Cancel one exact Gateway attempt
+      description: |
+        Idempotently closes only the exact job, attempt, Gateway and lease token.
+        A LEASED attempt with no send-start evidence is cancelled without cooldown.
+        An AWAITING_REPLY attempt with recorded SMS_SENT evidence is closed and
+        starts a server-enforced four-minute claim cooldown. SENDING or AMBIGUOUS
+        attempts are not released and quarantine the Gateway.
+      security:
+        - GatewayBearerAuth: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [attempt_id, lease_token]
+              properties:
+                attempt_id: { type: string, format: uuid }
+                lease_token: { type: string, minLength: 32, maxLength: 128 }
+                reason: { type: [string, "null"], maxLength: 240 }
+      responses:
+        "200":
+          description: Exact attempt cancellation outcome and authoritative cooldown deadline.
+        "409":
+          description: Attempt identity/state mismatch; no other attempt is released.
   /v1/gateway/jobs/{job_id}/ambiguous:
     post:
       tags: [Gateway worker]
