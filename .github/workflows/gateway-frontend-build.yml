@@ -1,0 +1,31 @@
+name: Gateway Frontend Build
+
+on:
+  push:
+    branches:
+      - gateway-5.0-ai-studio-frontend
+  pull_request:
+    branches:
+      - gateway-5.0-ai-studio-frontend
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build frontend
+        run: npm run build
+      - name: Verify output
+        run: test -s dist/index.html
