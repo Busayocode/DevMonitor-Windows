@@ -36,5 +36,7 @@ jobs:
         run: npm test
       - name: Validate complete D1 schema locally
         run: npx wrangler d1 execute devmonitor-gateway --local --file=./schema.sql
+      - name: Verify cancellation cooldown and quarantine smoke scenarios
+        run: npx wrangler d1 execute devmonitor-gateway --local --file=./smoke-cancellation.sql
       - name: Compile Worker without deploying
         run: npm run build
