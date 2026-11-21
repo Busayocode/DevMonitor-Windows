@@ -201,7 +201,7 @@ CREATE INDEX IF NOT EXISTS idx_gateway_cooldown ON dm_gateways(cancellation_cool
 CREATE INDEX IF NOT EXISTS idx_batch_tenant_user ON dm_check_batches(tenant_id,requested_by_user_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_batch_gateway_queue ON dm_check_batches(assigned_gateway_id,status,created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_batch ON dm_check_jobs(batch_id,enqueued_at);
-CREATE INDEX IF NOT EXISTS idx_jobs_gateway_queue ON dm_check_jobs(state,tenant_id,assigned_gateway_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_tenant_queue ON dm_check_jobs(tenant_id,state,enqueued_at);
 CREATE INDEX IF NOT EXISTS idx_attempt_gateway_state ON dm_job_attempts(gateway_id,state,lease_expires_at);
 CREATE INDEX IF NOT EXISTS idx_attempt_job ON dm_job_attempts(job_id,attempt_number);
 CREATE INDEX IF NOT EXISTS idx_daily_result_lookup ON dm_daily_sms_results(tenant_id,canonical_device_id,business_date);
