@@ -1,4 +1,4 @@
-name: Gateway Cloudflare Runtime Check
+name: Gateway Cloudflare Backend Build
 
 on:
   push:
@@ -17,29 +17,26 @@ permissions:
   contents: read
 
 jobs:
-  build-worker:
-    name: Build FastAPI Python Worker (dry run)
+  validate-worker:
+    name: Typecheck, safety tests, D1 schema and Worker build
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: controller/cloudflare/worker
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-          cache-dependency-glob: "controller/cloudflare/worker/pyproject.toml"
-
-      - name: Install Python Worker dependencies
-        run: uv sync
-
+          cache: "npm"
+          cache-dependency-path: controller/cloudflare/worker/package-lock.json
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: TypeScript validation
+        run: npm run typecheck
+      - name: Gateway safety tests
+        run: npm test
+      - name: Validate complete D1 schema locally
+        run: npx wrangler d1 execute devmonitor-gateway --local --file=./schema.sql
       - name: Compile Worker without deploying
-        run: uv run pywrangler deploy --dry-run
+        run: npm run build
