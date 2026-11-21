@@ -59,7 +59,9 @@ Do not copy Firebase service-account private keys into this Worker. ID-token ver
 
 ## Tenant provisioning
 
-The API intentionally does not allow arbitrary callers to create tenants or grant device access. Tenant records, OWNER membership and approved device grants must be provisioned by an administrator using the D1 Console. Use the original tenant/device authorization source of truth; do not invent grants merely to make a test pass. The authenticated Firebase UID is stored as dm_users.auth_subject on first authenticated request.
+The API intentionally does not allow arbitrary callers to create tenants or grant device access. Tenant records, OWNER membership and approved device grants must be provisioned by an administrator using the D1 Console. Use the template in bootstrap-tenant.example.sql, replacing every placeholder with verified values. The Firebase user must sign in once so their UID is present in dm_users. Use the original tenant/device authorization source of truth; do not invent grants merely to make a test pass. The authenticated Firebase UID is stored as dm_users.auth_subject on first authenticated request.
+
+Controller operator access is a separate global privilege. Grant it only to a trusted administrator by inserting their verified user row into dm_controller_operators. The operator endpoints are POST /v1/operator/attempts/{attempt_id}/resolve and POST /v1/operator/gateways/{gateway_id}/release-quarantine. Ambiguous attempts must be explicitly resolved before a quarantined Gateway can be released.
 
 ## Not yet production-verified
 
