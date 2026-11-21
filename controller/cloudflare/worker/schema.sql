@@ -207,3 +207,29 @@ CREATE INDEX IF NOT EXISTS idx_attempt_job ON dm_job_attempts(job_id,attempt_num
 CREATE INDEX IF NOT EXISTS idx_daily_result_lookup ON dm_daily_sms_results(tenant_id,canonical_device_id,business_date);
 CREATE INDEX IF NOT EXISTS idx_health_gateway_time ON dm_gateway_health_events(gateway_id,event_at);
 CREATE INDEX IF NOT EXISTS idx_snapshots_tenant_time ON dm_tenant_queue_snapshots(tenant_id,captured_at);
+
+-- Mirror the PostgreSQL active-device-entitlement trigger at the D1 boundary.
+CREATE TRIGGER IF NOT EXISTS dm_check_job_active_device_access_insert
+BEFORE INSERT ON dm_check_jobs
+WHEN NOT EXISTS (
+  SELECT 1 FROM dm_tenant_device_access
+  WHERE tenant_id=NEW.tenant_id
+    AND canonical_device_id=NEW.canonical_device_id
+    AND access_state='ACTIVE'
+)
+BEGIN
+  SELECT RAISE(ABORT,'device is not actively authorized for this tenant');
+END;
+
+CREATE TRIGGER IF NOT EXISTS dm_check_job_active_device_access_update
+BEFORE UPDATE OF tenant_id,canonical_device_id ON dm_check_jobs
+WHEN (OLD.tenant_id<>NEW.tenant_id OR OLD.canonical_device_id<>NEW.canonical_device_id)
+ AND NOT EXISTS (
+  SELECT 1 FROM dm_tenant_device_access
+  WHERE tenant_id=NEW.tenant_id
+    AND canonical_device_id=NEW.canonical_device_id
+    AND access_state='ACTIVE'
+ )
+BEGIN
+  SELECT RAISE(ABORT,'device is not actively authorized for this tenant');
+END;
