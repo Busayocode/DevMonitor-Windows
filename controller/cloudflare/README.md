@@ -52,7 +52,7 @@ These limits must be checked again before deployment because provider limits can
 
 - [x] Isolated Cloudflare adaptation branch created from `gateway-controller-cancel-cooldown-v1`.
 - [x] Existing PostgreSQL controller and V001–V014 migration inventory inspected.
-- [ ] FastAPI Python Worker skeleton and local build.
+- [x] Minimal FastAPI Python Worker skeleton and build-only GitHub Actions workflow added (build result not yet verified).
 - [ ] D1 schema and atomic cancellation/claim prototype.
 - [ ] Recovery scheduling prototype.
 - [ ] Automated parity tests.
