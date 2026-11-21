@@ -67,7 +67,7 @@ Controller operator access is a separate global privilege. Grant it only to a tr
 
 - Cloudflare account and D1 database have not been provisioned.
 - No Worker has been deployed and no public endpoint is active.
-- GitHub Actions must pass before this branch is considered build-verified.
+- GitHub Actions passed at commit f523c0dd: TypeScript validation, safety tests, local D1 schema validation and Wrangler dry-run build.
 - Real Firebase tokens, D1 concurrent-claim races, Cron execution, limits and restart/recovery behaviour still require integration testing.
 - Android is not pointed at this endpoint; outbound SMS remains disabled pending controlled physical Glo/3030 tests.
 
