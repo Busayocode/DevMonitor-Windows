@@ -1,0 +1,45 @@
+name: Gateway Cloudflare Runtime Check
+
+on:
+  push:
+    branches:
+      - gateway-5.0-cloudflare-adaptation
+    paths:
+      - "controller/cloudflare/worker/**"
+      - ".github/workflows/gateway-cloudflare-runtime.yml"
+  pull_request:
+    paths:
+      - "controller/cloudflare/worker/**"
+      - ".github/workflows/gateway-cloudflare-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-worker:
+    name: Build FastAPI Python Worker (dry run)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: controller/cloudflare/worker
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "controller/cloudflare/worker/pyproject.toml"
+
+      - name: Install Python Worker dependencies
+        run: uv sync
+
+      - name: Compile Worker without deploying
+        run: uv run pywrangler deploy --dry-run
