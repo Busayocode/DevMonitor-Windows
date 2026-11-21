@@ -1,0 +1,19 @@
+{
+  "name": "devmonitor-gateway-cloudflare",
+  "private": true,
+  "version": "5.0.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "wrangler deploy --dry-run --outdir=dist"
+  },
+  "dependencies": {
+    "jose": "^6.1.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "wrangler": "^4.45.0",
+    "vitest": "^3.2.4"
+  }
+}
