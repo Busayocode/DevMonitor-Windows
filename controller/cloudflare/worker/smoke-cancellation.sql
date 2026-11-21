@@ -49,8 +49,8 @@ INSERT INTO smoke_assertions(ok)
 SELECT CASE WHEN
  (SELECT state FROM dm_job_attempts WHERE id='66666666-6666-4666-8666-666666666666')='REJECTED'
  AND (SELECT state FROM dm_check_jobs WHERE id='55555555-5555-4555-8555-555555555555')='CANCELLED'
- AND (SELECT cooldown_until FROM dm_gateways WHERE id='33333333-3333-4333-8333-333333333333') IS NOT NULL
- AND abs((julianday((SELECT cooldown_until FROM dm_gateways WHERE id='33333333-3333-4333-8333-333333333333'))-julianday((SELECT created_at FROM dm_gateway_attempt_cancellations WHERE attempt_id='66666666-6666-4666-8666-666666666666')))*86400.0-240)<2
+ AND (SELECT cancellation_cooldown_until FROM dm_gateways WHERE id='33333333-3333-4333-8333-333333333333') IS NOT NULL
+ AND abs((julianday((SELECT cancellation_cooldown_until FROM dm_gateways WHERE id='33333333-3333-4333-8333-333333333333'))-julianday((SELECT created_at FROM dm_gateway_attempt_cancellations WHERE attempt_id='66666666-6666-4666-8666-666666666666')))*86400.0-240)<2
  THEN 1 ELSE 0 END;
 
 -- Pre-send cancellation: no cooldown is created.
