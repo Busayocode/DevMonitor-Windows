@@ -11,7 +11,7 @@
     {
       "binding": "DB",
       "database_name": "devmonitor-gateway",
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "database_id": "31b4edcc-b2a8-4f62-9d62-5049e48e36ec"
     }
   ],
   "vars": {
