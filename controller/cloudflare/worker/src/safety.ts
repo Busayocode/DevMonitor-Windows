@@ -13,7 +13,7 @@ export function classifyCancellation(
   if (attempt.state === "LEASED" && jobState === "LEASED" && !attempt.sendStartedAt && !attempt.smsSentAt) {
     return "CANCELLED_BEFORE_SEND";
   }
-  if (attempt.state === "AWAITING_REPLY" && jobState === "AWAITING_REPLY" && !!attempt.smsSentAt) {
+  if (attempt.state === "AWAITING_REPLY" && jobState === "AWAITING_REPLY" && !!attempt.sendStartedAt && !!attempt.smsSentAt) {
     return "CANCELLED_AFTER_SEND";
   }
   if (attempt.state === "SENDING" || attempt.state === "AMBIGUOUS" || jobState === "SENDING" || jobState === "AMBIGUOUS") {
