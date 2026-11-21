@@ -16,7 +16,7 @@ This branch contains the isolated Cloudflare implementation of the existing Gate
 - SENDING/AMBIGUOUS cancellation or expiry quarantines the Gateway. Such attempts are never automatically retried.
 - Daily result cache with two-month retention; scheduled queue snapshots with 30-day retention.
 - Bounded scheduled recovery once per minute. This replaces the old infinite 15-second/60-second loops; safety-critical deadlines are checked synchronously by API operations.
-- Tenant-admin analytics.
+- Tenant-admin analytics and controller-operator actions for explicit ambiguous-attempt resolution and Gateway quarantine release.
 
 ## Safety rules preserved
 
@@ -50,7 +50,7 @@ No bank card, domain purchase, Oracle account, VPS, paid service or SMS provider
 2. In Workers & Pages → D1 SQL Database, create a database named devmonitor-gateway.
 3. Copy its database ID and replace the all-zero placeholder in wrangler.jsonc.
 4. In the D1 Console, apply schema.sql once to the newly created empty database. Never reapply it to a populated production database as a reset.
-5. In Workers & Pages, deploy this Worker from the GitHub branch or connect the repository using Cloudflare Workers Builds.
+5. In Workers & Pages, connect the repository using Cloudflare Workers Builds. Set the project root to controller/cloudflare/worker, the build command to npm run build and the deploy command to npm run deploy. Select the gateway-5.0-cloudflare-adaptation branch.
 6. Set Worker variable FIREBASE_PROJECT_ID to the exact Firebase Project ID (the existing Fieldpulse Firebase project is intended; verify the exact ID in Firebase Project settings).
 7. Keep the default workers.dev HTTPS hostname. No custom domain or DuckDNS is needed.
 8. Verify GET /health, Firebase user authentication, Gateway registration, heartbeat, batch create/read, claim, cancellation and result flows before building an Android app configured with this URL.
