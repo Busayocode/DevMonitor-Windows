@@ -13,7 +13,7 @@ const first=(db:D1Database,sql:string,...v:any[])=>db.prepare(sql).bind(...v).fi
 const all=async(db:D1Database,sql:string,...v:any[])=>(await db.prepare(sql).bind(...v).all<R>()).results||[];
 const run=(db:D1Database,sql:string,...v:any[])=>db.prepare(sql).bind(...v).run();
 const validText=(v:any,n:number,min=1)=>typeof v==="string"&&v.trim().length>=min&&v.trim().length<=n;
-const validId=(v:any)=>typeof v==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+const validId=(v:any):v is string=>typeof v==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 async function readBody(req:Request){try{return await req.json() as R}catch{throw new ApiError(400,"Valid JSON body required")}}
 function bearer(req:Request){const m=/^Bearer\s+(.+)$/i.exec(req.headers.get("Authorization")||"");if(!m)throw new ApiError(401,"Bearer authentication required");return m[1]}
 async function authUser(req:Request,env:Env){
