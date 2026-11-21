@@ -115,6 +115,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
    const me=await authUser(req,env),b=await readBody(req),aid=resolveAttempt[1];
    const operator=await first(db,"SELECT active FROM dm_controller_operators WHERE user_id=?",me.id);
    if(!operator||!operator.active)throw new ApiError(403,"Controller operator role required");
+   if(!onlyKeys(b,["resolution","resolution_note"]))throw new ApiError(400,"Unexpected operator resolution field");
    if(!["DISCARD_NO_RETRY","REQUEUE_AFTER_INBOX_CLEARED"].includes(b.resolution)||!validText(b.resolution_note,500,12))throw new ApiError(400,"A supported resolution and meaningful 12–500 character note are required");
    const a=await first(db,"SELECT a.id,a.job_id,a.gateway_id,a.state,j.state job_state,j.batch_id,j.tenant_id,j.attempt_count,j.max_attempts FROM dm_job_attempts a JOIN dm_check_jobs j ON j.id=a.job_id WHERE a.id=?",aid);
    if(!a||a.state!=="AMBIGUOUS"||a.job_state!=="AMBIGUOUS")throw new ApiError(409,"Ambiguous attempt is no longer awaiting operator resolution");
@@ -132,6 +133,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
    const me=await authUser(req,env),b=await readBody(req),gid=releaseGateway[1];
    const operator=await first(db,"SELECT active FROM dm_controller_operators WHERE user_id=?",me.id);
    if(!operator||!operator.active)throw new ApiError(403,"Controller operator role required");
+   if(!onlyKeys(b,["resolution_note"]))throw new ApiError(400,"Unexpected operator release field");
    if(!validText(b.resolution_note,500,12))throw new ApiError(400,"A meaningful 12–500 character resolution note is required");
    const g=await first(db,"SELECT * FROM dm_gateways WHERE id=?",gid);if(!g||g.health_state!=="QUARANTINED")throw new ApiError(409,"Gateway is not quarantined");
    if(await first(db,"SELECT id FROM dm_job_attempts WHERE gateway_id=? AND state='AMBIGUOUS' LIMIT 1",gid))throw new ApiError(409,"Resolve every ambiguous attempt before releasing this Gateway");
