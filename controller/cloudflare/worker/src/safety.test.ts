@@ -7,7 +7,7 @@ describe("Gateway timing and cancellation safety", () => {
     expect(replyTimeoutSeconds("Partner menu")).toBe(180);
   });
   it("starts the four-minute cooldown only after confirmed SMS_SENT", () => {
-    expect(classifyCancellation({state:"AWAITING_REPLY",smsSentAt:"2026-11-21T00:00:00.000Z"},"AWAITING_REPLY")).toBe("CANCELLED_AFTER_SEND");
+    expect(classifyCancellation({state:"AWAITING_REPLY",sendStartedAt:"2026-11-21T00:00:00.000Z",smsSentAt:"2026-11-21T00:00:01.000Z"},"AWAITING_REPLY")).toBe("CANCELLED_AFTER_SEND");
     expect(classifyCancellation({state:"LEASED"},"LEASED")).toBe("CANCELLED_BEFORE_SEND");
     expect(classifyCancellation({state:"SENDING"},"SENDING")).toBe("BLOCKED_QUARANTINED");
   });
